@@ -1,0 +1,42 @@
+# Virtual environment
+.venv/
+venv/
+env/
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Environment / secrets
+.env
+.env.*
+!.env.example
+
+# Local model files
+models/*.gguf
+*.gguf
+
+# Local data / potentially sensitive files
+data/uploads/
+data/outputs/
+data/knowledge/
+
+# Vector databases / indexes
+*.db
+*.sqlite
+*.sqlite3
+chroma/
+vector_store/
+
+# Logs
+*.log
+logs/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
