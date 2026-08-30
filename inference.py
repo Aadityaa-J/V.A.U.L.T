@@ -1,23 +1,76 @@
 from typing import Optional
 
-from models.llm import generate as llm_generate
+from models.llm import (
+    simple_generate,
+    complex_generate
+)
+
+from models.router import classify_task
+from models.vision import analyze_image
 
 
 def generate(
     prompt: str,
-    model: Optional[str] = None
+    image_path: Optional[str] = None
 ) -> str:
     """
-    Common interface for local AI text generation.
+    Common V.A.U.L.T AI interface.
 
-    Other parts of V.A.U.L.T can use this function
-    without directly interacting with Ollama.
+    Automatically selects the appropriate model
+    based on the task type.
+
+    Simple  -> Qwen3 1.7B
+    Complex -> Qwen3 4B
+    Visual  -> Qwen3-VL 2B
     """
 
-    if model is None:
-        return llm_generate(prompt)
-
-    return llm_generate(
+    task_type = classify_task(
         prompt,
-        model
+        image_path
+    )
+
+    print(f"[Inference] Task type: {task_type}")
+
+    # --------------------------------
+    # SIMPLE TASK
+    # --------------------------------
+    if task_type == "simple":
+        print("[Inference] Using Qwen3 1.7B")
+
+        return simple_generate(
+            prompt
+        )
+
+    # --------------------------------
+    # COMPLEX TASK
+    # --------------------------------
+    if task_type == "complex":
+        print("[Inference] Using Qwen3 4B")
+
+        return complex_generate(
+            prompt
+        )
+
+    # --------------------------------
+    # VISUAL TASK
+    # --------------------------------
+    if task_type == "visual":
+
+        if image_path is None:
+            raise ValueError(
+                "Visual task requires an image_path."
+            )
+
+        print("[Inference] Using Qwen3-VL 2B")
+
+        return analyze_image(
+            image_path,
+            prompt
+        )
+
+    # --------------------------------
+    # UNKNOWN TASK
+    # --------------------------------
+    raise ValueError(
+        f"Unknown task type: {task_type}"
     )
