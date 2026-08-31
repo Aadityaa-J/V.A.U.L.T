@@ -1,2 +1,8 @@
 ollama
 python-dotenv
+chromadb==1.5.9
+docx2txt==0.9
+langchain-community==0.4.2
+langchain-text-splitters==1.1.2
+pypdf==6.16.2
+sentence-transformers==6.0.0
