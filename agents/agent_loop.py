@@ -20,7 +20,18 @@ class AgentLoop:
 
         self.last_state: Dict[str, Any] = {}
 
-    def run(self, task: str) -> str:
+    def run(
+        self,
+        task: str,
+        conversation_history=None
+    ) -> str:
+        """
+        Run the agent loop.
+
+        conversation_history contains previous user and
+        assistant messages supplied by the session system.
+        """
+
         context = AgentContext(task=task)
 
         self.last_state = context.to_dict()
@@ -31,7 +42,10 @@ class AgentLoop:
         ):
             state = context.to_dict()
 
-            prompt = self._build_prompt(state)
+            prompt = self._build_prompt(
+                state,
+                conversation_history
+            )
 
             response = generate(
                 prompt=prompt,
@@ -97,16 +111,17 @@ class AgentLoop:
 
                 self.last_state = context.to_dict()
 
-            else:
-                context.add_step(
-                    step_number=step_number,
-                    action=action,
-                    observation=None
-                )
+                continue
 
-                self.last_state = context.to_dict()
+            context.add_step(
+                step_number=step_number,
+                action=action,
+                observation=None
+            )
 
-                return response
+            self.last_state = context.to_dict()
+
+            return response
 
         self.last_state = context.to_dict()
 
@@ -115,7 +130,15 @@ class AgentLoop:
             "number of steps was reached."
         )
 
-    def _build_prompt(self, state: Dict[str, Any]) -> str:
+    def _build_prompt(
+        self,
+        state: Dict[str, Any],
+        conversation_history=None
+    ) -> str:
+        """
+        Build the prompt for the LLM.
+        """
+
         observations = "\n".join(
             str(item)
             for item in state["observations"]
@@ -126,12 +149,40 @@ class AgentLoop:
             for tool in self.tools.values()
         )
 
+        history_lines = []
+
+        if conversation_history:
+            for message in conversation_history:
+                role = message.get(
+                    "role",
+                    "unknown"
+                )
+
+                content = message.get(
+                    "content",
+                    ""
+                )
+
+                history_lines.append(
+                    f"{role.capitalize()}: {content}"
+                )
+
+        conversation_text = "\n".join(
+            history_lines
+        )
+
+        if not conversation_text:
+            conversation_text = "None"
+
         return f"""
 {self.system_prompt}
 
 You are operating in an agentic loop.
 
-User task:
+Previous conversation:
+{conversation_text}
+
+Current user task:
 {state["task"]}
 
 Previous observations:
@@ -142,49 +193,84 @@ Available tools:
 
 Decide what to do next.
 
-If you need to use a tool, respond exactly as:
+IMPORTANT RESPONSE FORMAT:
+
+If you need to use a tool:
 
 ACTION: tool
 NAME: <tool name>
-ARGUMENTS: <argument>
+ARGUMENTS:
+<arguments>
 
-If you have enough information to answer, respond exactly as:
+If you have enough information to answer:
 
 ACTION: final
-CONTENT: <final answer>
+CONTENT:
+<your complete answer>
+
+Do not place anything before ACTION.
 """
 
-    def _parse_action(self, response: str) -> Dict[str, Any]:
+    def _parse_action(
+        self,
+        response: str
+    ) -> Dict[str, Any]:
         """
-        Parse the model response into a structured action.
+        Parse the model response.
 
-        Supported actions:
+        Supports multiline final answers and multiline
+        tool arguments.
+
+        Supported formats:
 
         ACTION: final
-        CONTENT: <answer>
+        CONTENT:
+        <multiline answer>
 
         ACTION: tool
         NAME: <tool name>
-        ARGUMENTS: <arguments>
+        ARGUMENTS:
+        <multiline arguments>
         """
 
-        lines = [
-            line.strip()
-            for line in response.splitlines()
-            if line.strip()
-        ]
+        if not isinstance(response, str):
+            return {
+                "type": "unknown",
+                "content": str(response)
+            }
+
+        cleaned_response = response.strip()
+
+        if not cleaned_response:
+            return {
+                "type": "unknown",
+                "content": response
+            }
+
+        lines = cleaned_response.splitlines()
 
         action_type = None
         name = ""
-        arguments = ""
-        content = ""
+        content_lines = []
+        argument_lines = []
+
+        current_section = None
 
         for line in lines:
-            if line.upper().startswith("ACTION:"):
-                action_value = line.split(
-                    ":",
-                    1
-                )[1].strip().lower()
+            stripped_line = line.strip()
+            upper_line = stripped_line.upper()
+
+            # ----------------------------------------------
+            # ACTION
+            # ----------------------------------------------
+
+            if upper_line.startswith("ACTION:"):
+                action_value = (
+                    stripped_line
+                    .split(":", 1)[1]
+                    .strip()
+                    .lower()
+                )
 
                 if action_value == "final":
                     action_type = "final"
@@ -192,36 +278,103 @@ CONTENT: <final answer>
                 elif action_value == "tool":
                     action_type = "tool"
 
-            elif line.upper().startswith("NAME:"):
-                name = line.split(
-                    ":",
-                    1
-                )[1].strip()
+                current_section = None
+                continue
 
-            elif line.upper().startswith("ARGUMENTS:"):
-                arguments = line.split(
-                    ":",
-                    1
-                )[1].strip()
+            # ----------------------------------------------
+            # TOOL NAME
+            # ----------------------------------------------
 
-            elif line.upper().startswith("CONTENT:"):
-                content = line.split(
-                    ":",
-                    1
-                )[1].strip()
+            if upper_line.startswith("NAME:"):
+                name = (
+                    stripped_line
+                    .split(":", 1)[1]
+                    .strip()
+                )
+
+                current_section = "name"
+                continue
+
+            # ----------------------------------------------
+            # ARGUMENTS
+            # ----------------------------------------------
+
+            if upper_line.startswith("ARGUMENTS:"):
+                argument_value = (
+                    line.split(":", 1)[1]
+                )
+
+                current_section = "arguments"
+
+                if argument_value.strip():
+                    argument_lines.append(
+                        argument_value.lstrip()
+                    )
+
+                continue
+
+            # ----------------------------------------------
+            # CONTENT
+            # ----------------------------------------------
+
+            if upper_line.startswith("CONTENT:"):
+                content_value = (
+                    line.split(":", 1)[1]
+                )
+
+                current_section = "content"
+
+                if content_value.strip():
+                    content_lines.append(
+                        content_value.lstrip()
+                    )
+
+                continue
+
+            # ----------------------------------------------
+            # MULTILINE CONTENT
+            # ----------------------------------------------
+
+            if current_section == "content":
+                content_lines.append(line)
+
+            elif current_section == "arguments":
+                argument_lines.append(line)
+
+        # --------------------------------------------------
+        # FINAL ACTION
+        # --------------------------------------------------
 
         if action_type == "final":
+
+            content = "\n".join(
+                content_lines
+            ).strip()
+
             return {
                 "type": "final",
                 "content": content
             }
 
+        # --------------------------------------------------
+        # TOOL ACTION
+        # --------------------------------------------------
+
         if action_type == "tool":
+
+            arguments = "\n".join(
+                argument_lines
+            ).strip()
+
             return {
                 "type": "tool",
                 "name": name,
                 "arguments": arguments
             }
+
+        # --------------------------------------------------
+        # UNKNOWN RESPONSE
+        # --------------------------------------------------
 
         return {
             "type": "unknown",
@@ -233,11 +386,17 @@ CONTENT: <final answer>
         state: Dict[str, Any],
         action: Dict[str, Any]
     ) -> bool:
+        """
+        Check whether the agent is attempting the exact
+        same tool call again.
+        """
 
         for step in state["steps"]:
             previous_action = step["action"]
 
-            if previous_action.get("type") != "tool":
+            if previous_action.get(
+                "type"
+            ) != "tool":
                 continue
 
             if (
@@ -256,6 +415,9 @@ CONTENT: <final answer>
         name: str,
         arguments: str
     ) -> Any:
+        """
+        Execute an available tool safely.
+        """
 
         if name not in self.tools:
             return {
