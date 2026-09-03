@@ -1,29 +1,53 @@
 from agents.agent_loop import AgentLoop
 
 
-def calculator(arguments: str):
-    return "The calculation result is 80%."
+def main():
+    print("=" * 60)
+    print("AGENT LOOP ACTION PARSER TEST")
+    print("=" * 60)
 
+    loop = AgentLoop(
+        system_prompt="Test agent",
+        model="qwen3:1.7b"
+    )
 
-loop = AgentLoop(
-    system_prompt="""
-You are a simple engineering assistant.
-Use the calculator when a calculation is required.
-""",
-    tools={
-        "calculator": calculator
-    },
-    max_steps=3
-)
-
-result = loop.run(
-    """
-Calculate the efficiency of a pump that produces
-8 kW of useful output from 10 kW of input.
+    final_response = """
+ACTION: final
+CONTENT: The task has been completed successfully.
 """
-)
 
-print("\n" + "=" * 60)
-print("AGENT LOOP TEST")
-print("=" * 60)
-print(result)
+    final_action = loop._parse_action(final_response)
+
+    print("\nFINAL ACTION:")
+    print(final_action)
+
+    assert final_action["type"] == "final"
+    assert (
+        final_action["content"]
+        == "The task has been completed successfully."
+    )
+
+    tool_response = """
+Some additional reasoning text.
+
+ACTION: tool
+NAME: calculate
+ARGUMENTS: 25 * 4
+"""
+
+    tool_action = loop._parse_action(tool_response)
+
+    print("\nTOOL ACTION:")
+    print(tool_action)
+
+    assert tool_action["type"] == "tool"
+    assert tool_action["name"] == "calculate"
+    assert tool_action["arguments"] == "25 * 4"
+
+    print("\n" + "=" * 60)
+    print("PARSER TEST PASSED")
+    print("=" * 60)
+
+
+if __name__ == "__main__":
+    main()
