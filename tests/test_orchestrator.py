@@ -1,22 +1,80 @@
 from agents.orchestrator import Orchestrator
+from tools.base import BaseTool
 
 
-orchestrator = Orchestrator()
+class FakeCalculator(BaseTool):
+    name = "calculate"
+    description = "Performs a test engineering calculation."
 
-task = """
-A pump consumes 10 kW of input power and produces
-8 kW of useful hydraulic power.
+    def execute(self, arguments):
+        return f"Calculation result for: {arguments}"
 
-Calculate its efficiency and show the formula and
-calculation steps.
-"""
 
-result = orchestrator.run(
-    task=task,
-    task_type="engineering"
-)
+def main():
+    print("=" * 60)
+    print("ORCHESTRATOR AUTOMATIC ROUTING TEST")
+    print("=" * 60)
 
-print("\n" + "=" * 60)
-print("ORCHESTRATOR TEST")
-print("=" * 60)
-print(result)
+    orchestrator = Orchestrator()
+
+    calculator = FakeCalculator()
+    orchestrator.register_tool(calculator)
+
+    print(
+        "\nCalculator registered:",
+        orchestrator.tool_registry.has("calculate")
+    )
+
+    print("\n" + "-" * 60)
+    print("TEST 1: DOCUMENT")
+    print("-" * 60)
+
+    document_task = (
+        "Summarize the findings in this inspection report."
+    )
+
+    document_result = orchestrator.run(document_task)
+
+    print("Task:", document_task)
+    print("\nResult:")
+    print(document_result)
+
+    print("\n" + "-" * 60)
+    print("TEST 2: CODING")
+    print("-" * 60)
+
+    coding_task = (
+        "Write a Python function that calculates the "
+        "factorial of a number."
+    )
+
+    coding_result = orchestrator.run(coding_task)
+
+    print("Task:", coding_task)
+    print("\nResult:")
+    print(coding_result)
+
+    print("\n" + "-" * 60)
+    print("TEST 3: ENGINEERING")
+    print("-" * 60)
+
+    engineering_task = (
+        "Calculate the pump efficiency from the given "
+        "measurements."
+    )
+
+    engineering_result = orchestrator.run(
+        engineering_task
+    )
+
+    print("Task:", engineering_task)
+    print("\nResult:")
+    print(engineering_result)
+
+    print("\n" + "=" * 60)
+    print("AUTOMATIC ROUTING TEST COMPLETED")
+    print("=" * 60)
+
+
+if __name__ == "__main__":
+    main()
