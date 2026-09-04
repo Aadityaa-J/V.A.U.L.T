@@ -7,6 +7,16 @@ class TaskClassifier:
         self.task_type = "classification"
 
     def classify(self, task: str) -> str:
+        """
+        Classify a user task into the appropriate V.A.U.L.T. agent.
+
+        Supported categories:
+        - document
+        - coding
+        - engineering
+        - general
+        """
+
         model = select_model(self.task_type)
 
         prompt = f"""
@@ -17,20 +27,39 @@ Classify the user's task into exactly ONE of these categories:
 - document
 - coding
 - engineering
+- general
 
 Definitions:
 
 document:
-Tasks involving reading, analyzing, summarizing, extracting,
-or interpreting documents.
+Tasks specifically involving reading, analyzing, summarizing,
+extracting, searching, or interpreting a document or file.
 
 coding:
-Tasks involving writing, debugging, modifying, or explaining code.
+Tasks involving writing, debugging, modifying, executing,
+or explaining computer code.
 
 engineering:
 Tasks involving engineering calculations, measurements,
-equipment analysis, formulas, technical parameters, or
-engineering interpretation.
+equipment analysis, formulas, physical quantities, technical
+parameters, or engineering interpretation.
+
+general:
+Normal conversation, greetings, questions about the user,
+follow-up conversation, general knowledge questions, or any
+task that does not clearly belong to document, coding,
+or engineering.
+
+Important rules:
+
+- Do NOT classify normal conversation as document.
+- Only choose document when the user explicitly refers to a
+  document, file, or document-related task.
+- Only choose coding when the task is clearly about programming
+  or software development.
+- Only choose engineering when the task is clearly an engineering
+  or technical calculation/problem.
+- If uncertain, choose general.
 
 User task:
 {task}
@@ -45,13 +74,15 @@ Respond with ONLY the category name.
 
         result = response.strip().lower()
 
-        if result not in {
+        valid_categories = {
             "document",
             "coding",
-            "engineering"
-        }:
-            raise ValueError(
-                f"Invalid task classification: {result}"
-            )
+            "engineering",
+            "general",
+        }
+
+        if result not in valid_categories:
+            # Safe fallback: normal/general conversation.
+            return "general"
 
         return result

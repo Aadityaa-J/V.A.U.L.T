@@ -17,8 +17,18 @@ class BaseAgent:
         self.tools = tools or {}
         self.max_steps = max_steps
 
-    def run(self, task: str) -> str:
-        model = select_model(self.task_type)
+    def run(
+        self,
+        task: str,
+        conversation_history=None
+    ) -> str:
+        """
+        Run the agent using the appropriate model.
+        """
+
+        model_task_type = self._get_model_task_type()
+
+        model = select_model(model_task_type)
 
         loop = AgentLoop(
             system_prompt=self.system_prompt,
@@ -27,4 +37,24 @@ class BaseAgent:
             max_steps=self.max_steps
         )
 
-        return loop.run(task)
+        return loop.run(
+            task,
+            conversation_history=conversation_history
+        )
+
+    def _get_model_task_type(self) -> str:
+        """
+        Map agent task types to model router task types.
+        """
+
+        task_type_mapping = {
+            "document": "simple",
+            "coding": "complex",
+            "engineering": "complex",
+            "general": "simple",
+        }
+
+        return task_type_mapping.get(
+            self.task_type,
+            "simple"
+        )

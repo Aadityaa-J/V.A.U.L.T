@@ -16,25 +16,104 @@ def classify_task(
     image_path: Optional[str] = None
 ) -> str:
     """
-    Classify a request into:
+    Classify a request for model selection.
+
+    Returns one of:
 
         simple
         complex
         visual
         classification
         extraction
-
-    If an image is supplied, the request is visual.
+        document
+        coding
+        engineering
     """
 
     # -----------------------------------------------------
-    # Image requests always go to the vision model
+    # Image requests
     # -----------------------------------------------------
 
     if image_path:
         return "visual"
 
     prompt_lower = prompt.lower().strip()
+
+    # -----------------------------------------------------
+    # Document tasks
+    # -----------------------------------------------------
+
+    document_keywords = [
+        "document",
+        "file",
+        "read document",
+        "read file",
+        "summarize document",
+        "summarize file",
+        "search document",
+        "search file",
+        "document info",
+        "text file",
+        "markdown",
+        "csv file",
+        "json file",
+    ]
+
+    for keyword in document_keywords:
+        if keyword in prompt_lower:
+            return "document"
+
+    # -----------------------------------------------------
+    # Coding tasks
+    # -----------------------------------------------------
+
+    coding_keywords = [
+        "python",
+        "code",
+        "program",
+        "function",
+        "script",
+        "debug",
+        "bug",
+        "software",
+        "algorithm",
+        "write code",
+        "execute code",
+        "run python",
+    ]
+
+    for keyword in coding_keywords:
+        if keyword in prompt_lower:
+            return "coding"
+
+    # -----------------------------------------------------
+    # Engineering tasks
+    # -----------------------------------------------------
+
+    engineering_keywords = [
+        "calculate",
+        "calculation",
+        "engineering",
+        "multiply",
+        "multiplied",
+        "divide",
+        "addition",
+        "subtract",
+        "force",
+        "pressure",
+        "velocity",
+        "acceleration",
+        "voltage",
+        "current",
+        "power",
+        "torque",
+        "stress",
+        "strain",
+    ]
+
+    for keyword in engineering_keywords:
+        if keyword in prompt_lower:
+            return "engineering"
 
     # -----------------------------------------------------
     # Extraction tasks
@@ -95,10 +174,8 @@ def classify_task(
         "optimization",
         "optimize",
         "derive",
-        "calculate",
         "design",
         "architecture",
-        "debug",
         "debugging",
         "trade-off",
         "tradeoff",
@@ -122,18 +199,37 @@ def classify_task(
 
 def select_model(task_type: str) -> str:
     """
-    Select the appropriate local model for a task type.
+    Select the appropriate local model.
+
+    Agent task types and model task types are both supported.
     """
+
+    # -----------------------------------------------------
+    # Fast model tasks
+    # -----------------------------------------------------
 
     if task_type in {
         "simple",
         "classification",
         "extraction",
+        "document",
     }:
         return FAST_MODEL
 
-    if task_type == "complex":
+    # -----------------------------------------------------
+    # Main reasoning model tasks
+    # -----------------------------------------------------
+
+    if task_type in {
+        "complex",
+        "coding",
+        "engineering",
+    }:
         return MAIN_MODEL
+
+    # -----------------------------------------------------
+    # Vision model
+    # -----------------------------------------------------
 
     if task_type == "visual":
         return VISION_MODEL
@@ -154,8 +250,7 @@ def route(
     """
     Determine which local model should handle a request.
 
-    Returns:
-        The selected Ollama model name.
+    Returns the selected Ollama model name.
     """
 
     task_type = classify_task(
