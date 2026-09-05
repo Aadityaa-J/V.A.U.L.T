@@ -1,13 +1,4 @@
 from agents.orchestrator import Orchestrator
-from tools.base import BaseTool
-
-
-class FakeCalculator(BaseTool):
-    name = "calculate"
-    description = "Performs a test engineering calculation."
-
-    def execute(self, arguments):
-        return f"Calculation result for: {arguments}"
 
 
 def main():
@@ -17,12 +8,13 @@ def main():
 
     orchestrator = Orchestrator()
 
-    calculator = FakeCalculator()
-    orchestrator.register_tool(calculator)
-
     print(
         "\nCalculator registered:",
         orchestrator.tool_registry.has("calculate")
+    )
+
+    assert orchestrator.tool_registry.has(
+        "calculate"
     )
 
     print("\n" + "-" * 60)
@@ -33,7 +25,9 @@ def main():
         "Summarize the findings in this inspection report."
     )
 
-    document_result = orchestrator.run(document_task)
+    document_result = orchestrator.run(
+        document_task
+    )
 
     print("Task:", document_task)
     print("\nResult:")
@@ -48,7 +42,9 @@ def main():
         "factorial of a number."
     )
 
-    coding_result = orchestrator.run(coding_task)
+    coding_result = orchestrator.run(
+        coding_task
+    )
 
     print("Task:", coding_task)
     print("\nResult:")

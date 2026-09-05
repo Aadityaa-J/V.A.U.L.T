@@ -59,7 +59,8 @@ class ValidationLoop:
             [str, str, str],
             str
         ] | None = None,
-        human_input: Dict[str, Any] | None = None
+        human_input: Dict[str, Any] | None = None,
+        task_type: str = "engineering"
     ) -> Dict[str, Any]:
 
         current_result = initial_result
@@ -100,6 +101,7 @@ class ValidationLoop:
 
                     self.last_state = {
                         "task": task,
+                        "task_type": task_type,
                         "final_result": current_result,
                         "status": (
                             "review_limit_reached"
@@ -118,13 +120,15 @@ class ValidationLoop:
                         + "\n"
                         + review["corrections"]
                     ),
-                    generate_revision=generate_revision
+                    generate_revision=generate_revision,
+                    task_type=task_type
                 )
 
                 continue
 
             self.last_state = {
                 "task": task,
+                "task_type": task_type,
                 "final_result": current_result,
                 "status": "review_uncertain",
                 "reviews": review_history,
@@ -166,6 +170,7 @@ class ValidationLoop:
 
                 self.last_state = {
                     "task": task,
+                    "task_type": task_type,
                     "final_result": current_result,
                     "status": "human_approved",
                     "reviews": review_history,
@@ -189,7 +194,8 @@ class ValidationLoop:
                     task=task,
                     result=current_result,
                     feedback=human_message,
-                    generate_revision=generate_revision
+                    generate_revision=generate_revision,
+                    task_type=task_type
                 )
 
                 # -----------------------------------------
@@ -218,6 +224,7 @@ class ValidationLoop:
 
                     self.last_state = {
                         "task": task,
+                        "task_type": task_type,
                         "final_result": current_result,
                         "status": (
                             "human_feedback_validated"
@@ -232,6 +239,7 @@ class ValidationLoop:
 
                 self.last_state = {
                     "task": task,
+                    "task_type": task_type,
                     "final_result": current_result,
                     "status": (
                         "requires_further_review"
@@ -250,6 +258,7 @@ class ValidationLoop:
 
         self.last_state = {
             "task": task,
+            "task_type": task_type,
             "final_result": current_result,
             "status": "validated",
             "reviews": review_history,
@@ -266,7 +275,8 @@ class ValidationLoop:
         generate_revision: Callable[
             [str, str, str],
             str
-        ] | None
+        ] | None,
+        task_type: str
     ) -> str:
 
         if generate_revision is not None:
@@ -280,18 +290,20 @@ class ValidationLoop:
         return self._generate_revision(
             task=task,
             result=result,
-            feedback=feedback
+            feedback=feedback,
+            task_type=task_type
         )
 
     def _generate_revision(
         self,
         task: str,
         result: str,
-        feedback: str
+        feedback: str,
+        task_type: str
     ) -> str:
 
         model = select_model(
-            "engineering"
+            task_type
         )
 
         prompt = f"""

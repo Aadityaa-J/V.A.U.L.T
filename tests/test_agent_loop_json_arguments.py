@@ -42,13 +42,8 @@ def main():
     print("\nTEST 2: MARKDOWN JSON")
 
     arguments = """
-                ```json
-                {
-                    "source": "file1.txt",
-                    "destination": "folder/file1.txt"
-                }
-                ```
-                """
+```json
+{
     "source": "file1.txt",
     "destination": "folder/file1.txt"
-}
+}"""
