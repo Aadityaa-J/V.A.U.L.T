@@ -1,5 +1,3 @@
-import re
-
 from agents.document_agent import DocumentAgent
 from agents.coding_agent import CodingAgent
 from agents.engineering_agent import EngineeringAgent
@@ -8,6 +6,7 @@ from agents.task_classifier import TaskClassifier
 from agents.session import AgentSession
 from agents.memory import AgentMemory
 from agents.memory_manager import MemoryManager
+from agents.validation_loop import ValidationLoop
 
 from tools.registry import ToolRegistry
 from tools.adapters import (
@@ -27,7 +26,10 @@ from tools.adapters import (
 
 
 class Orchestrator:
-    def __init__(self):
+    def __init__(
+        self,
+        validation_loop=None
+    ):
         # ----------------------------------------------
         # CORE SYSTEMS
         # ----------------------------------------------
@@ -44,6 +46,16 @@ class Orchestrator:
         # Automatic memory extraction.
         self.memory_manager = MemoryManager(
             self.memory
+        )
+
+        # AI peer-review and human intervention.
+        #
+        # A ValidationLoop can be injected for
+        # deterministic testing. If none is supplied,
+        # the normal production ValidationLoop is used.
+        self.validation_loop = (
+            validation_loop
+            or ValidationLoop()
         )
 
         # ----------------------------------------------
@@ -197,10 +209,39 @@ class Orchestrator:
 
     def run(
         self,
-        task: str
+        task: str,
+        human_input=None
     ) -> str:
         """
         Process a user task.
+
+        The selected primary agent first produces a draft.
+        The draft is then passed through the AI peer-review
+        and optional human-intervention validation loop.
+
+        Human input is optional. It may contain:
+
+            {
+                "status": "approve",
+                "input": "Approved by engineer."
+            }
+
+        or:
+
+            {
+                "status": "feedback",
+                "input": "Recheck the pressure measurement."
+            }
+
+        or:
+
+            {
+                "status": "reject",
+                "input": "The operating condition is incorrect."
+            }
+
+        Any AI revision resulting from human feedback or
+        rejection is sent through peer review again.
         """
 
         if not isinstance(task, str):
@@ -270,16 +311,33 @@ class Orchestrator:
         )
 
         # ----------------------------------------------
-        # RUN AGENT
+        # RUN PRIMARY AGENT
         # ----------------------------------------------
 
-        result = agent.run(
+        draft_result = agent.run(
             task,
             conversation_history=conversation_history
         )
 
         # ----------------------------------------------
-        # STORE ASSISTANT RESPONSE
+        # AI PEER REVIEW + HUMAN INTERVENTION
+        # ----------------------------------------------
+
+        validation_state = (
+            self.validation_loop.run(
+                task=task,
+                initial_result=draft_result,
+                human_input=human_input,
+                task_type=task_type
+            )
+        )
+
+        result = validation_state[
+            "final_result"
+        ]
+
+        # ----------------------------------------------
+        # STORE FINAL ASSISTANT RESPONSE
         # ----------------------------------------------
 
         self.session.add_assistant_message(

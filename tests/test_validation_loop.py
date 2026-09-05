@@ -252,12 +252,10 @@ def test_human_feedback_triggers_revision_and_rereview():
         == "Recheck the pressure measurement."
     )
 
-    # Initial result was reviewed.
     assert reviewer.calls[0] == (
         "Initial result"
     )
 
-    # Human-revised result was reviewed again.
     assert reviewer.calls[1] == (
         "Human-corrected result"
     )
@@ -359,6 +357,35 @@ def test_no_human_intervention():
     )
 
 
+def test_task_type_is_preserved_in_validation_state():
+
+    class PassReviewer:
+
+        def review(
+            self,
+            task,
+            result
+        ):
+            return {
+                "verdict": "PASS",
+                "reason": "Looks correct.",
+                "corrections": "",
+                "raw_response": ""
+            }
+
+    loop = ValidationLoop(
+        reviewer=PassReviewer()
+    )
+
+    state = loop.run(
+        task="Write Python code",
+        initial_result="Code result",
+        task_type="coding"
+    )
+
+    assert state["task_type"] == "coding"
+
+
 if __name__ == "__main__":
 
     test_revision_loop_revises_and_passes()
@@ -368,6 +395,7 @@ if __name__ == "__main__":
     test_human_feedback_triggers_revision_and_rereview()
     test_human_rejection_triggers_revision_and_rereview()
     test_no_human_intervention()
+    test_task_type_is_preserved_in_validation_state()
 
     print(
         "All validation loop tests passed."
