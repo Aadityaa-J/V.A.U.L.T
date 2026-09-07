@@ -6,3 +6,37 @@ langchain-community==0.4.2
 langchain-text-splitters==1.1.2
 pypdf==6.16.2
 sentence-transformers==6.0.0
+# ==========================================================
+# V.A.U.L.T. AI REQUIREMENTS
+# GPU + CUDA + LoRA / QLoRA Fine-Tuning Environment
+# ==========================================================
+
+# PyTorch GPU (CUDA 13.0)
+torch==2.14.0
+torchvision==0.29.0
+
+# Hugging Face Transformers
+transformers==5.16.1
+
+# LoRA / PEFT
+peft==0.20.0
+
+# Training Acceleration
+accelerate==1.14.0
+
+# Dataset Processing
+datasets==5.0.1
+pandas==3.0.5
+pyarrow==25.0.1
+
+# QLoRA / 4-bit Quantization
+bitsandbytes==0.50.2
+
+# Safe Model Storage
+safetensors==0.8.0
+
+# Supporting Dependencies
+numpy==2.5.2
+huggingface-hub==1.29.0
+tokenizers==0.23.1
+fsspec==2026.6.0
