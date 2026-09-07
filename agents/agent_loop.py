@@ -1,17 +1,34 @@
-from typing import Dict, Any
+from typing import Any, Dict, List, Optional
+import json
+import re
 
-from models.llm import generate
+from models.llm import chat_generate
 from tools.base import BaseTool
 from agents.context import AgentContext
 
 
 class AgentLoop:
+    """
+    Autonomous execution loop for V.A.U.L.T.
+
+    Execution strategy:
+
+    1. Check for deterministic tool opportunities.
+    2. Execute obvious tools immediately.
+    3. Otherwise use the LLM autonomous loop.
+
+    This makes simple operations such as mathematical
+    calculations significantly faster.
+    """
+
     def __init__(
         self,
         system_prompt: str,
         model: str,
-        tools: Dict[str, BaseTool] | None = None,
-        max_steps: int = 5
+        tools: Optional[
+            Dict[str, BaseTool]
+        ] = None,
+        max_steps: int = 5,
     ):
         self.system_prompt = system_prompt
         self.model = model
@@ -20,142 +37,462 @@ class AgentLoop:
 
         self.last_state: Dict[str, Any] = {}
 
+    # ==========================================================
+    # MAIN AGENT LOOP
+    # ==========================================================
+
     def run(
         self,
         task: str,
-        conversation_history=None
+        conversation_history=None,
     ) -> str:
         """
-        Run the agent loop.
-
-        conversation_history contains previous user and
-        assistant messages supplied by the session system.
+        Run the autonomous agent.
         """
 
-        context = AgentContext(task=task)
+        if not isinstance(task, str):
+            raise TypeError(
+                "Task must be a string."
+            )
+
+        if not task.strip():
+            raise ValueError(
+                "Task cannot be empty."
+            )
+
+        task = task.strip()
+
+        # ======================================================
+        # FAST PATH: DETERMINISTIC TOOL ROUTING
+        # ======================================================
+
+        direct_result = (
+            self._try_direct_tool_route(
+                task
+            )
+        )
+
+        if direct_result is not None:
+            return direct_result
+
+        # ======================================================
+        # NORMAL AUTONOMOUS AGENT LOOP
+        # ======================================================
+
+        context = AgentContext(
+            task=task
+        )
 
         self.last_state = context.to_dict()
 
         for step_number in range(
             1,
-            self.max_steps + 1
+            self.max_steps + 1,
         ):
+
             state = context.to_dict()
 
-            prompt = self._build_prompt(
-                state,
-                conversation_history
+            messages = self._build_messages(
+                state=state,
+                conversation_history=(
+                    conversation_history
+                ),
             )
 
-            response = generate(
-                prompt=prompt,
-                model=self.model
+            response = chat_generate(
+                messages=messages,
+                model=self.model,
+                use_router=False,
             )
 
-            action = self._parse_action(response)
+            action = self._parse_action(
+                response
+            )
+
+            # --------------------------------------------------
+            # FINAL ANSWER
+            # --------------------------------------------------
 
             if action["type"] == "final":
+
+                content = action.get(
+                    "content",
+                    ""
+                ).strip()
+
+                if not content:
+                    content = response.strip()
+
                 context.add_step(
                     step_number=step_number,
                     action=action,
-                    observation=None
+                    observation=None,
                 )
 
-                self.last_state = context.to_dict()
+                self.last_state = (
+                    context.to_dict()
+                )
 
-                return action["content"]
+                return content
+
+            # --------------------------------------------------
+            # TOOL CALL
+            # --------------------------------------------------
 
             if action["type"] == "tool":
-                if self._is_repeated_tool_call(
-                    context.to_dict(),
-                    action
-                ):
-                    result = {
+
+                tool_name = action.get(
+                    "name",
+                    ""
+                ).strip()
+
+                if not tool_name:
+
+                    error_result = {
                         "type": "tool_error",
-                        "tool": action["name"],
+                        "tool": None,
                         "error": (
-                            "Repeated identical tool call "
-                            "detected. Execution stopped "
-                            "to prevent an agent loop."
+                            "The model requested a tool "
+                            "but did not provide a tool name."
                         ),
-                        "arguments": action["arguments"]
                     }
 
                     context.add_step(
                         step_number=step_number,
                         action=action,
-                        observation=result
+                        observation=error_result,
                     )
 
-                    context.add_observation(result)
-
-                    self.last_state = context.to_dict()
-
-                    return (
-                        "Agent stopped because a repeated "
-                        "identical tool call was detected."
+                    context.add_observation(
+                        error_result
                     )
+
+                    self.last_state = (
+                        context.to_dict()
+                    )
+
+                    continue
+
+                # ----------------------------------------------
+                # REPEATED TOOL CALL PROTECTION
+                # ----------------------------------------------
+
+                if self._is_repeated_tool_call(
+                    context.to_dict(),
+                    action,
+                ):
+
+                    result = {
+                        "type": "tool_error",
+                        "tool": tool_name,
+                        "error": (
+                            "Repeated identical tool call "
+                            "detected. The tool was not "
+                            "executed again."
+                        ),
+                        "arguments": action.get(
+                            "arguments"
+                        ),
+                    }
+
+                    context.add_step(
+                        step_number=step_number,
+                        action=action,
+                        observation=result,
+                    )
+
+                    context.add_observation(
+                        result
+                    )
+
+                    self.last_state = (
+                        context.to_dict()
+                    )
+
+                    continue
+
+                # ----------------------------------------------
+                # EXECUTE TOOL
+                # ----------------------------------------------
 
                 result = self._execute_tool(
-                    action["name"],
-                    action["arguments"]
+                    tool_name,
+                    action.get(
+                        "arguments",
+                        ""
+                    ),
                 )
 
                 context.add_step(
                     step_number=step_number,
                     action=action,
-                    observation=result
+                    observation=result,
                 )
 
-                context.add_observation(result)
+                context.add_observation(
+                    result
+                )
 
-                self.last_state = context.to_dict()
+                self.last_state = (
+                    context.to_dict()
+                )
 
                 continue
+
+            # --------------------------------------------------
+            # UNKNOWN RESPONSE
+            # --------------------------------------------------
 
             context.add_step(
                 step_number=step_number,
                 action=action,
-                observation=None
+                observation=None,
             )
 
-            self.last_state = context.to_dict()
+            self.last_state = (
+                context.to_dict()
+            )
 
-            return response
+            return response.strip()
+
+        # ======================================================
+        # MAXIMUM STEPS REACHED
+        # ======================================================
 
         self.last_state = context.to_dict()
 
         return (
             "Agent stopped because the maximum "
-            "number of steps was reached."
+            "number of execution steps was reached."
         )
 
-    def _build_prompt(
+    # ==========================================================
+    # DIRECT TOOL ROUTING
+    # ==========================================================
+
+    def _try_direct_tool_route(
+        self,
+        task: str,
+    ) -> Optional[str]:
+        """
+        Detect obvious tool requests and execute them
+        immediately.
+
+        Currently supports:
+
+        - Mathematical calculations.
+        """
+
+        # ------------------------------------------------------
+        # CALCULATOR
+        # ------------------------------------------------------
+
+        expression = (
+            self._extract_math_expression(
+                task
+            )
+        )
+
+        if expression is not None:
+
+            if "calculate" not in self.tools:
+                return None
+
+            result = self._execute_tool(
+                "calculate",
+                expression,
+            )
+
+            if result["type"] == "tool_result":
+
+                calculation_result = (
+                    result["result"]
+                )
+
+                return (
+                    f"{expression} = "
+                    f"{calculation_result}"
+                )
+
+            return None
+
+        return None
+
+    # ==========================================================
+    # MATH EXPRESSION EXTRACTION
+    # ==========================================================
+
+    def _extract_math_expression(
+        self,
+        task: str,
+    ) -> Optional[str]:
+        """
+        Extract a simple mathematical expression.
+
+        Examples:
+
+            25 * 48
+
+            Calculate 25 * 48
+
+            What is (100 + 25) / 5?
+
+        Returns the expression or None.
+        """
+
+        text = task.strip()
+
+        # ------------------------------------------------------
+        # REMOVE COMMON PREFIXES
+        # ------------------------------------------------------
+
+        prefixes = [
+            "calculate",
+            "what is",
+            "solve",
+            "compute",
+            "evaluate",
+        ]
+
+        cleaned = text.lower()
+
+        for prefix in prefixes:
+
+            if cleaned.startswith(prefix):
+
+                text = text[
+                    len(prefix):
+                ].strip(
+                    " :?"
+                )
+
+                break
+
+        # ------------------------------------------------------
+        # REMOVE QUESTION MARK
+        # ------------------------------------------------------
+
+        text = text.strip()
+
+        if text.endswith("?"):
+
+            text = text[:-1].strip()
+
+        # ------------------------------------------------------
+        # NORMALIZE COMMON SYMBOLS
+        # ------------------------------------------------------
+
+        text = (
+            text
+            .replace("×", "*")
+            .replace("÷", "/")
+        )
+
+        # ------------------------------------------------------
+        # VALIDATE MATH EXPRESSION
+        # ------------------------------------------------------
+
+        if not text:
+            return None
+
+        pattern = (
+            r"^[0-9+\-*/%.()\s]+$"
+        )
+
+        if re.fullmatch(
+            pattern,
+            text,
+        ):
+
+            return text
+
+        return None
+
+    # ==========================================================
+    # MESSAGE BUILDING
+    # ==========================================================
+
+    def _build_messages(
         self,
         state: Dict[str, Any],
-        conversation_history=None
-    ) -> str:
-        """
-        Build the prompt for the LLM.
-        """
+        conversation_history=None,
+    ) -> List[Dict[str, str]]:
 
-        observations = "\n".join(
-            str(item)
-            for item in state["observations"]
+        messages: List[
+            Dict[str, str]
+        ] = []
+
+        # ------------------------------------------------------
+        # MAIN SYSTEM PROMPT
+        # ------------------------------------------------------
+
+        system_content = (
+            f"{self.system_prompt}\n\n"
+
+            "You are operating inside the "
+            "V.A.U.L.T. autonomous agent system.\n\n"
+
+            "You must decide whether you need a tool "
+            "before answering.\n\n"
+
+            "IMPORTANT RESPONSE FORMAT\n\n"
+
+            "If you need to use a tool, respond EXACTLY "
+            "in this structure:\n\n"
+
+            "ACTION: tool\n"
+            "NAME: <tool name>\n"
+            "ARGUMENTS:\n"
+            "<tool arguments>\n\n"
+
+            "If a tool requires multiple parameters, "
+            "use JSON:\n\n"
+
+            "ACTION: tool\n"
+            "NAME: <tool name>\n"
+            "ARGUMENTS:\n"
+            "{\"parameter\": \"value\"}\n\n"
+
+            "If you already have enough information "
+            "to answer the user:\n\n"
+
+            "ACTION: final\n"
+            "CONTENT:\n"
+            "<complete answer>\n\n"
+
+            "Rules:\n"
+            "- Do not place anything before ACTION.\n"
+            "- Use only available tools.\n"
+            "- After receiving a tool result, use that "
+            "result when answering.\n"
+            "- Do not repeat an identical tool call.\n"
+            "- Do not invent tool results.\n"
+            "- If no tool is necessary, answer directly."
         )
 
-        available_tools = "\n".join(
-            f"- {tool.name}: {tool.description}"
-            for tool in self.tools.values()
+        messages.append(
+            {
+                "role": "system",
+                "content": system_content,
+            }
         )
 
-        history_lines = []
+        # ------------------------------------------------------
+        # CONVERSATION HISTORY
+        # ------------------------------------------------------
 
         if conversation_history:
+
             for message in conversation_history:
+
+                if not isinstance(
+                    message,
+                    dict,
+                ):
+                    continue
+
                 role = message.get(
-                    "role",
-                    "unknown"
+                    "role"
                 )
 
                 content = message.get(
@@ -163,88 +500,149 @@ class AgentLoop:
                     ""
                 )
 
-                history_lines.append(
-                    f"{role.capitalize()}: {content}"
+                if role not in {
+                    "system",
+                    "user",
+                    "assistant",
+                }:
+                    continue
+
+                if not isinstance(
+                    content,
+                    str,
+                ):
+                    continue
+
+                if not content.strip():
+                    continue
+
+                messages.append(
+                    {
+                        "role": role,
+                        "content": content.strip(),
+                    }
                 )
 
-        conversation_text = "\n".join(
-            history_lines
+        # ------------------------------------------------------
+        # AVAILABLE TOOLS
+        # ------------------------------------------------------
+
+        if self.tools:
+
+            available_tools = []
+
+            for tool in self.tools.values():
+
+                available_tools.append(
+                    f"- NAME: {tool.name}\n"
+                    f"  DESCRIPTION: "
+                    f"{tool.description}"
+                )
+
+            messages.append(
+                {
+                    "role": "system",
+                    "content": (
+                        "AVAILABLE TOOLS:\n\n"
+                        + "\n\n".join(
+                            available_tools
+                        )
+                    ),
+                }
+            )
+
+        else:
+
+            messages.append(
+                {
+                    "role": "system",
+                    "content": (
+                        "No tools are available for "
+                        "this agent."
+                    ),
+                }
+            )
+
+        # ------------------------------------------------------
+        # TOOL OBSERVATIONS
+        # ------------------------------------------------------
+
+        observations = state.get(
+            "observations",
+            [],
         )
 
-        if not conversation_text:
-            conversation_text = "None"
+        if observations:
 
-        return f"""
-{self.system_prompt}
+            observation_blocks = []
 
-You are operating in an agentic loop.
+            for index, observation in enumerate(
+                observations,
+                start=1,
+            ):
 
-Previous conversation:
-{conversation_text}
+                observation_text = (
+                    self._format_observation(
+                        observation
+                    )
+                )
 
-Current user task:
-{state["task"]}
+                observation_blocks.append(
+                    f"Observation {index}:\n"
+                    f"{observation_text}"
+                )
 
-Previous observations:
-{observations if observations else "None"}
+            messages.append(
+                {
+                    "role": "system",
+                    "content": (
+                        "TOOL RESULTS:\n\n"
+                        + "\n\n".join(
+                            observation_blocks
+                        )
+                        + "\n\n"
+                        "Use the tool results above as "
+                        "real observations from the system."
+                    ),
+                }
+            )
 
-Available tools:
-{available_tools if available_tools else "None"}
+        # ------------------------------------------------------
+        # CURRENT TASK
+        # ------------------------------------------------------
 
-Decide what to do next.
+        messages.append(
+            {
+                "role": "user",
+                "content": state["task"],
+            }
+        )
 
-IMPORTANT RESPONSE FORMAT:
+        return messages
 
-If you need to use a tool:
-
-ACTION: tool
-NAME: <tool name>
-ARGUMENTS:
-<arguments>
-
-If you have enough information to answer:
-
-ACTION: final
-CONTENT:
-<your complete answer>
-
-Do not place anything before ACTION.
-"""
+    # ==========================================================
+    # ACTION PARSER
+    # ==========================================================
 
     def _parse_action(
         self,
-        response: str
+        response: str,
     ) -> Dict[str, Any]:
-        """
-        Parse the model response.
-
-        Supports multiline final answers and multiline
-        tool arguments.
-
-        Supported formats:
-
-        ACTION: final
-        CONTENT:
-        <multiline answer>
-
-        ACTION: tool
-        NAME: <tool name>
-        ARGUMENTS:
-        <multiline arguments>
-        """
 
         if not isinstance(response, str):
+
             return {
                 "type": "unknown",
-                "content": str(response)
+                "content": str(response),
             }
 
         cleaned_response = response.strip()
 
         if not cleaned_response:
+
             return {
                 "type": "unknown",
-                "content": response
+                "content": "",
             }
 
         lines = cleaned_response.splitlines()
@@ -253,21 +651,28 @@ Do not place anything before ACTION.
         name = ""
         content_lines = []
         argument_lines = []
-
         current_section = None
 
         for line in lines:
+
             stripped_line = line.strip()
-            upper_line = stripped_line.upper()
 
-            # ----------------------------------------------
+            upper_line = (
+                stripped_line.upper()
+            )
+
             # ACTION
-            # ----------------------------------------------
 
-            if upper_line.startswith("ACTION:"):
+            if upper_line.startswith(
+                "ACTION:"
+            ):
+
                 action_value = (
                     stripped_line
-                    .split(":", 1)[1]
+                    .split(
+                        ":",
+                        1,
+                    )[1]
                     .strip()
                     .lower()
                 )
@@ -279,71 +684,89 @@ Do not place anything before ACTION.
                     action_type = "tool"
 
                 current_section = None
+
                 continue
 
-            # ----------------------------------------------
-            # TOOL NAME
-            # ----------------------------------------------
+            # NAME
 
-            if upper_line.startswith("NAME:"):
+            if upper_line.startswith(
+                "NAME:"
+            ):
+
                 name = (
                     stripped_line
-                    .split(":", 1)[1]
+                    .split(
+                        ":",
+                        1,
+                    )[1]
                     .strip()
                 )
 
                 current_section = "name"
+
                 continue
 
-            # ----------------------------------------------
             # ARGUMENTS
-            # ----------------------------------------------
 
-            if upper_line.startswith("ARGUMENTS:"):
+            if upper_line.startswith(
+                "ARGUMENTS:"
+            ):
+
                 argument_value = (
-                    line.split(":", 1)[1]
+                    line
+                    .split(
+                        ":",
+                        1,
+                    )[1]
                 )
 
                 current_section = "arguments"
 
                 if argument_value.strip():
+
                     argument_lines.append(
                         argument_value.lstrip()
                     )
 
                 continue
 
-            # ----------------------------------------------
             # CONTENT
-            # ----------------------------------------------
 
-            if upper_line.startswith("CONTENT:"):
+            if upper_line.startswith(
+                "CONTENT:"
+            ):
+
                 content_value = (
-                    line.split(":", 1)[1]
+                    line
+                    .split(
+                        ":",
+                        1,
+                    )[1]
                 )
 
                 current_section = "content"
 
                 if content_value.strip():
+
                     content_lines.append(
                         content_value.lstrip()
                     )
 
                 continue
 
-            # ----------------------------------------------
-            # MULTILINE CONTENT
-            # ----------------------------------------------
+            # MULTILINE SECTIONS
 
             if current_section == "content":
+
                 content_lines.append(line)
 
             elif current_section == "arguments":
+
                 argument_lines.append(line)
 
-        # --------------------------------------------------
-        # FINAL ACTION
-        # --------------------------------------------------
+        # ------------------------------------------------------
+        # FINAL
+        # ------------------------------------------------------
 
         if action_type == "final":
 
@@ -353,12 +776,12 @@ Do not place anything before ACTION.
 
             return {
                 "type": "final",
-                "content": content
+                "content": content,
             }
 
-        # --------------------------------------------------
-        # TOOL ACTION
-        # --------------------------------------------------
+        # ------------------------------------------------------
+        # TOOL
+        # ------------------------------------------------------
 
         if action_type == "tool":
 
@@ -369,79 +792,255 @@ Do not place anything before ACTION.
             return {
                 "type": "tool",
                 "name": name,
-                "arguments": arguments
+                "arguments": arguments,
             }
 
-        # --------------------------------------------------
-        # UNKNOWN RESPONSE
-        # --------------------------------------------------
+        # ------------------------------------------------------
+        # UNKNOWN
+        # ------------------------------------------------------
 
         return {
             "type": "unknown",
-            "content": response
+            "content": response,
         }
+
+    # ==========================================================
+    # REPEATED TOOL CALL DETECTION
+    # ==========================================================
 
     def _is_repeated_tool_call(
         self,
         state: Dict[str, Any],
-        action: Dict[str, Any]
+        action: Dict[str, Any],
     ) -> bool:
-        """
-        Check whether the agent is attempting the exact
-        same tool call again.
-        """
 
-        for step in state["steps"]:
-            previous_action = step["action"]
+        previous_steps = state.get(
+            "steps",
+            [],
+        )
+
+        action_name = (
+            action.get(
+                "name",
+                ""
+            )
+            .strip()
+            .lower()
+        )
+
+        action_arguments = (
+            self._normalize_arguments(
+                action.get(
+                    "arguments",
+                    ""
+                )
+            )
+        )
+
+        for step in previous_steps:
+
+            previous_action = step.get(
+                "action",
+                {}
+            )
 
             if previous_action.get(
                 "type"
             ) != "tool":
+
                 continue
 
+            previous_name = (
+                previous_action.get(
+                    "name",
+                    ""
+                )
+                .strip()
+                .lower()
+            )
+
+            previous_arguments = (
+                self._normalize_arguments(
+                    previous_action.get(
+                        "arguments",
+                        ""
+                    )
+                )
+            )
+
             if (
-                previous_action.get("name")
-                == action.get("name")
-                and
-                previous_action.get("arguments")
-                == action.get("arguments")
+                previous_name == action_name
+                and previous_arguments
+                == action_arguments
             ):
+
                 return True
 
         return False
 
+    # ==========================================================
+    # ARGUMENT NORMALIZATION
+    # ==========================================================
+
+    def _normalize_arguments(
+        self,
+        arguments: Any,
+    ) -> str:
+
+        if arguments is None:
+            return ""
+
+        if not isinstance(
+            arguments,
+            str,
+        ):
+            return str(arguments)
+
+        cleaned = arguments.strip()
+
+        if not cleaned:
+            return ""
+
+        try:
+
+            parsed = json.loads(
+                cleaned
+            )
+
+            return json.dumps(
+                parsed,
+                sort_keys=True,
+                ensure_ascii=False,
+            )
+
+        except (
+            json.JSONDecodeError,
+            TypeError,
+        ):
+
+            return cleaned
+
+    # ==========================================================
+    # TOOL EXECUTION
+    # ==========================================================
+
     def _execute_tool(
         self,
         name: str,
-        arguments: str
-    ) -> Any:
-        """
-        Execute an available tool safely.
-        """
+        arguments: Any,
+    ) -> Dict[str, Any]:
 
         if name not in self.tools:
+
             return {
                 "type": "tool_error",
                 "tool": name,
-                "error": "Tool is not available.",
-                "arguments": arguments
+                "error": (
+                    f"Tool '{name}' is not available "
+                    "to this agent."
+                ),
+                "arguments": arguments,
             }
 
         tool = self.tools[name]
 
+        # ------------------------------------------------------
+        # NORMALIZE ARGUMENTS
+        # ------------------------------------------------------
+
+        if arguments is None:
+
+            normalized_arguments = ""
+
+        elif isinstance(
+            arguments,
+            str,
+        ):
+
+            normalized_arguments = (
+                arguments.strip()
+            )
+
+        else:
+
+            try:
+
+                normalized_arguments = (
+                    json.dumps(
+                        arguments
+                    )
+                )
+
+            except TypeError:
+
+                normalized_arguments = str(
+                    arguments
+                )
+
+        # ------------------------------------------------------
+        # EXECUTE
+        # ------------------------------------------------------
+
         try:
-            result = tool.execute(arguments)
+
+            result = tool.execute(
+                normalized_arguments
+            )
 
             return {
                 "type": "tool_result",
                 "tool": name,
-                "result": result
+                "arguments": (
+                    normalized_arguments
+                ),
+                "result": result,
             }
 
         except Exception as exc:
+
             return {
                 "type": "tool_error",
                 "tool": name,
+                "arguments": (
+                    normalized_arguments
+                ),
                 "error": str(exc),
-                "arguments": arguments
             }
+
+    # ==========================================================
+    # OBSERVATION FORMATTER
+    # ==========================================================
+
+    def _format_observation(
+        self,
+        observation: Any,
+    ) -> str:
+
+        if observation is None:
+
+            return "No observation."
+
+        if isinstance(
+            observation,
+            str,
+        ):
+
+            return observation
+
+        try:
+
+            return json.dumps(
+                observation,
+                indent=2,
+                ensure_ascii=False,
+                default=str,
+            )
+
+        except (
+            TypeError,
+            ValueError,
+        ):
+
+            return str(
+                observation
+            )

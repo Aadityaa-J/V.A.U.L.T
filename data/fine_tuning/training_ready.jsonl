@@ -1,0 +1,7 @@
+{"instruction": "Calculate pump efficiency", "input": "Input power is 10 kW and useful hydraulic power is 8 kW.", "output": "Efficiency = 8 / 10 = 0.8 = 80%.", "task_type": "engineering"}
+{"instruction": "Calculate pump efficiency", "input": "Input power is 10 kW and useful power is 8 kW.", "output": "Pump efficiency = 8 / 10 = 0.8 = 80%.", "task_type": "engineering"}
+{"instruction": "engineering", "input": "Engineering question 1", "output": "Engineering answer 1", "task_type": "engineering"}
+{"instruction": "engineering", "input": "Engineering question 2", "output": "Engineering answer 2", "task_type": "engineering"}
+{"instruction": "engineering", "input": "Engineering question 3", "output": "Engineering answer 3", "task_type": "engineering"}
+{"instruction": "engineering", "input": "Engineering question 4", "output": "Engineering answer 4", "task_type": "engineering"}
+{"instruction": "engineering", "input": "Engineering question 5", "output": "Engineering answer 5", "task_type": "engineering"}

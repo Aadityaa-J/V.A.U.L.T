@@ -1,76 +1,101 @@
+@'
 from agents.orchestrator import Orchestrator
 
 
+def run_test(orchestrator, task):
+
+    print()
+    print("=" * 60)
+    print(f"USER: {task}")
+    print("=" * 60)
+
+    try:
+
+        result = orchestrator.run(task)
+
+        print()
+        print("V.A.U.L.T.:")
+        print(result)
+
+    except Exception as exc:
+
+        print()
+        print("ERROR:")
+        print(type(exc).__name__)
+        print(exc)
+
+
 def main():
+
+    print()
     print("=" * 60)
-    print("ORCHESTRATOR AUTOMATIC ROUTING TEST")
+    print("V.A.U.L.T. ORCHESTRATOR MULTI-TEST")
     print("=" * 60)
+
+    print()
+    print("Initializing Orchestrator...")
 
     orchestrator = Orchestrator()
 
-    print(
-        "\nCalculator registered:",
-        orchestrator.tool_registry.has("calculate")
+    print("Orchestrator initialized successfully.")
+
+    # ---------------------------------------------
+    # TEST 1
+    # ---------------------------------------------
+
+    run_test(
+        orchestrator,
+        "Hello, how are you?"
     )
 
-    assert orchestrator.tool_registry.has(
-        "calculate"
+    # ---------------------------------------------
+    # TEST 2
+    # Tests conversation memory
+    # ---------------------------------------------
+
+    run_test(
+        orchestrator,
+        "What did I just ask you?"
     )
 
-    print("\n" + "-" * 60)
-    print("TEST 1: DOCUMENT")
-    print("-" * 60)
+    # ---------------------------------------------
+    # TEST 3
+    # Tests general knowledge routing
+    # ---------------------------------------------
 
-    document_task = (
-        "Summarize the findings in this inspection report."
+    run_test(
+        orchestrator,
+        "Explain what artificial intelligence is in simple words."
     )
 
-    document_result = orchestrator.run(
-        document_task
-    )
+    # ---------------------------------------------
+    # SESSION HISTORY
+    # ---------------------------------------------
 
-    print("Task:", document_task)
-    print("\nResult:")
-    print(document_result)
+    print()
+    print("=" * 60)
+    print("SESSION HISTORY")
+    print("=" * 60)
 
-    print("\n" + "-" * 60)
-    print("TEST 2: CODING")
-    print("-" * 60)
+    history = orchestrator.get_session_history()
 
-    coding_task = (
-        "Write a Python function that calculates the "
-        "factorial of a number."
-    )
+    for message in history:
 
-    coding_result = orchestrator.run(
-        coding_task
-    )
+        print()
+        print(
+            f"{message['role'].upper()}:"
+        )
 
-    print("Task:", coding_task)
-    print("\nResult:")
-    print(coding_result)
+        print(
+            message['content']
+        )
 
-    print("\n" + "-" * 60)
-    print("TEST 3: ENGINEERING")
-    print("-" * 60)
-
-    engineering_task = (
-        "Calculate the pump efficiency from the given "
-        "measurements."
-    )
-
-    engineering_result = orchestrator.run(
-        engineering_task
-    )
-
-    print("Task:", engineering_task)
-    print("\nResult:")
-    print(engineering_result)
-
-    print("\n" + "=" * 60)
-    print("AUTOMATIC ROUTING TEST COMPLETED")
+    print()
+    print("=" * 60)
+    print("ALL TESTS COMPLETE")
     print("=" * 60)
 
 
 if __name__ == "__main__":
     main()
+'@ | Set-Content test_orchestrator.py

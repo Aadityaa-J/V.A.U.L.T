@@ -1,0 +1,15 @@
+{
+  "deployments": [
+    {
+      "model_name": "vault-engineering-test-v1",
+      "artifact_id": "test-artifact-001",
+      "base_model": "qwen3:4b",
+      "task_type": "engineering",
+      "dataset_version": 1,
+      "runtime_model_name": "vault-engineering-test-v1",
+      "runtime": "mock",
+      "status": "ready",
+      "deployed_at": "2026-09-07T08:27:37.057833"
+    }
+  ]
+}

@@ -1,0 +1,18 @@
+{
+  "models": [
+    {
+      "model_name": "vault-engineering-runtime-v1",
+      "artifact_id": "vault-engineering-runtime-v1-artifact",
+      "base_model": "qwen3:4b",
+      "task_type": "engineering",
+      "dataset_version": 1,
+      "created_at": null,
+      "registered_at": "2026-09-07T08:29:29.362178",
+      "runtime": "mock",
+      "status": "approved",
+      "evaluation_score": 0.95,
+      "base_score": 0.8,
+      "improvement": 0.15
+    }
+  ]
+}
