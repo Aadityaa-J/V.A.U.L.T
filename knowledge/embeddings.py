@@ -1,7 +1,8 @@
 from sentence_transformers import SentenceTransformer
 
 
-MODEL_NAME = "all-MiniLM-L6-v2"
+#MODEL_NAME = "all-MiniLM-L6-v2"
+MODEL_NAME = "nomic-embed-text"
 
 _model = None
 
