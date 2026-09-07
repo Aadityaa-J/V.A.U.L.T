@@ -1,0 +1,136 @@
+{
+  "deployments": [
+    {
+      "model_name": "vault-engineering-973e1537ad77",
+      "artifact_id": "973e1537ad77",
+      "base_model": "qwen3:4b",
+      "task_type": "engineering",
+      "dataset_version": 1,
+      "runtime_model_name": "vault-engineering-973e1537ad77",
+      "runtime": "mock",
+      "status": "ready",
+      "deployed_at": "2026-09-07T08:46:11.975763"
+    },
+    {
+      "model_name": "vault-engineering-c9e7cac35bf7",
+      "artifact_id": "c9e7cac35bf7",
+      "base_model": "qwen3:4b",
+      "task_type": "engineering",
+      "dataset_version": 1,
+      "runtime_model_name": "vault-engineering-c9e7cac35bf7",
+      "runtime": "mock",
+      "status": "ready",
+      "deployed_at": "2026-09-07T10:17:45.017558"
+    },
+    {
+      "model_name": "vault-engineering-105c6da5cb70",
+      "artifact_id": "105c6da5cb70",
+      "base_model": "qwen3:4b",
+      "task_type": "engineering",
+      "dataset_version": 1,
+      "runtime_model_name": "vault-engineering-105c6da5cb70",
+      "runtime": "mock",
+      "status": "ready",
+      "deployed_at": "2026-09-07T10:17:50.187360"
+    },
+    {
+      "model_name": "vault-engineering-afdb83e91f00",
+      "artifact_id": "afdb83e91f00",
+      "base_model": "qwen3:4b",
+      "task_type": "engineering",
+      "dataset_version": 1,
+      "runtime_model_name": "vault-engineering-afdb83e91f00",
+      "runtime": "mock",
+      "status": "ready",
+      "deployed_at": "2026-09-07T10:35:25.446630"
+    },
+    {
+      "model_name": "vault-engineering-27d8cdb92aac",
+      "artifact_id": "27d8cdb92aac",
+      "base_model": "qwen3:4b",
+      "task_type": "engineering",
+      "dataset_version": 1,
+      "runtime_model_name": "vault-engineering-27d8cdb92aac",
+      "runtime": "mock",
+      "status": "ready",
+      "deployed_at": "2026-09-07T11:13:17.312151"
+    },
+    {
+      "model_name": "vault-engineering-109231e98bbd",
+      "artifact_id": "109231e98bbd",
+      "base_model": "qwen3:4b",
+      "task_type": "engineering",
+      "dataset_version": 1,
+      "runtime_model_name": "vault-engineering-109231e98bbd",
+      "runtime": "mock",
+      "status": "ready",
+      "deployed_at": "2026-09-07T11:13:17.327809"
+    },
+    {
+      "model_name": "vault-engineering-a84ebb994911",
+      "artifact_id": "a84ebb994911",
+      "base_model": "qwen3:4b",
+      "task_type": "engineering",
+      "dataset_version": 1,
+      "runtime_model_name": "vault-engineering-a84ebb994911",
+      "runtime": "mock",
+      "status": "ready",
+      "deployed_at": "2026-09-07T11:14:02.887103"
+    },
+    {
+      "model_name": "vault-engineering-e11e59248aa0",
+      "artifact_id": "e11e59248aa0",
+      "base_model": "qwen3:4b",
+      "task_type": "engineering",
+      "dataset_version": 1,
+      "runtime_model_name": "vault-engineering-e11e59248aa0",
+      "runtime": "mock",
+      "status": "ready",
+      "deployed_at": "2026-09-07T11:14:02.902116"
+    },
+    {
+      "model_name": "vault-engineering-2bacaa6e355b",
+      "artifact_id": "2bacaa6e355b",
+      "base_model": "qwen3:4b",
+      "task_type": "engineering",
+      "dataset_version": 1,
+      "runtime_model_name": "vault-engineering-2bacaa6e355b",
+      "runtime": "mock",
+      "status": "ready",
+      "deployed_at": "2026-09-07T11:23:47.953674"
+    },
+    {
+      "model_name": "vault-engineering-17c039e64a6b",
+      "artifact_id": "17c039e64a6b",
+      "base_model": "qwen3:4b",
+      "task_type": "engineering",
+      "dataset_version": 1,
+      "runtime_model_name": "vault-engineering-17c039e64a6b",
+      "runtime": "mock",
+      "status": "ready",
+      "deployed_at": "2026-09-07T11:23:47.969145"
+    },
+    {
+      "model_name": "vault-engineering-554725d1cc8b",
+      "artifact_id": "554725d1cc8b",
+      "base_model": "qwen3:4b",
+      "task_type": "engineering",
+      "dataset_version": 1,
+      "runtime_model_name": "vault-engineering-554725d1cc8b",
+      "runtime": "mock",
+      "status": "ready",
+      "deployed_at": "2026-09-07T11:28:56.397821"
+    },
+    {
+      "model_name": "vault-engineering-75f7b1f3fdcf",
+      "artifact_id": "75f7b1f3fdcf",
+      "base_model": "qwen3:4b",
+      "task_type": "engineering",
+      "dataset_version": 1,
+      "runtime_model_name": "vault-engineering-75f7b1f3fdcf",
+      "runtime": "mock",
+      "status": "ready",
+      "deployed_at": "2026-09-07T11:28:56.415985"
+    }
+  ]
+}

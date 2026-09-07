@@ -1,265 +1,208 @@
 from agents.orchestrator import Orchestrator
 
 
-def print_banner() -> None:
+def print_banner():
+
+    print()
     print("=" * 60)
-    print("V.A.U.L.T. - Sovereign AI System")
+    print("V.A.U.L.T.")
+    print("Versatile Autonomous Unified Logic Terminal")
     print("=" * 60)
-    print("Type 'help' to see available commands.")
+
+    print()
+    print("Local Sovereign AI System")
+    print()
+
+    print("Commands:")
+    print("  exit       - Close V.A.U.L.T.")
+    print("  quit       - Close V.A.U.L.T.")
+    print("  clear      - Clear conversation memory")
+    print("  memory     - Show persistent memory")
+    print("  clearall   - Clear all memory")
+
+    print()
+    print("=" * 60)
     print()
 
 
-def print_help() -> None:
-    print()
-    print("Available commands:")
-    print("  help                  - Show available commands")
-    print("  history               - Show conversation history")
-    print("  clear                 - Clear conversation history")
-    print("  memory                - Show long-term memory")
-    print("  forget <key>          - Forget one memory item")
-    print("  clear memory          - Clear all long-term memory")
-    print("  exit                  - Exit V.A.U.L.T.")
-    print()
+def main():
 
-
-def print_memory(
-    orchestrator: Orchestrator
-) -> None:
-    """
-    Display all long-term memory.
-    """
-
-    memory = orchestrator.get_memory()
-
-    print()
-
-    if not memory:
-        print("V.A.U.L.T. has no stored long-term memory.")
-
-    else:
-        print("V.A.U.L.T. Long-Term Memory:")
-
-        for key, value in memory.items():
-            readable_key = (
-                key.replace("_", " ")
-                .capitalize()
-            )
-
-            print(
-                f"  {readable_key}: {value}"
-            )
-
-    print()
-
-
-def forget_memory(
-    orchestrator: Orchestrator,
-    key: str
-) -> None:
-    """
-    Remove one memory item.
-    """
-
-    key = key.strip()
-
-    if not key:
-        print(
-            "\nUsage: forget <memory_key>\n"
-        )
-
-        return
-
-    memory = orchestrator.get_memory()
-
-    if key not in memory:
-        print(
-            f"\nNo memory found with key: {key}\n"
-        )
-
-        return
-
-    orchestrator.memory.forget(key)
-
-    print(
-        f"\nForgot memory: {key}\n"
-    )
-
-
-def main() -> None:
     print_banner()
 
-    orchestrator = Orchestrator()
+    print("Initializing V.A.U.L.T...")
+
+    try:
+
+        vault = Orchestrator()
+
+    except Exception as error:
+
+        print()
+        print("FAILED TO INITIALIZE V.A.U.L.T.")
+        print()
+        print(type(error).__name__)
+        print(error)
+
+        return
+
+    print()
+    print("V.A.U.L.T. ONLINE")
+    print()
 
     while True:
+
         try:
+
             user_input = input(
-                "You: "
+                "YOU > "
             ).strip()
 
-            if not user_input:
-                continue
+        except (
+            KeyboardInterrupt,
+            EOFError,
+        ):
 
-            command = user_input.lower()
+            print()
+            print()
+            print("V.A.U.L.T. shutting down.")
 
-            # ------------------------------------------
-            # EXIT
-            # ------------------------------------------
+            break
 
-            if command == "exit":
-                print(
-                    "\nShutting down "
-                    "V.A.U.L.T. Goodbye."
-                )
+        # -----------------------------------------
+        # EMPTY INPUT
+        # -----------------------------------------
 
-                break
+        if not user_input:
 
-            # ------------------------------------------
-            # HELP
-            # ------------------------------------------
+            continue
 
-            if command == "help":
-                print_help()
-                continue
+        command = user_input.lower()
 
-            # ------------------------------------------
-            # HISTORY
-            # ------------------------------------------
+        # -----------------------------------------
+        # EXIT
+        # -----------------------------------------
 
-            if command == "history":
+        if command in {
 
-                history = (
-                    orchestrator
-                    .get_session_history()
-                )
+            "exit",
+            "quit",
 
-                print()
+        }:
 
-                if not history:
+            print()
+            print("V.A.U.L.T. shutting down.")
 
-                    print(
-                        "No conversation history "
-                        "available."
-                    )
+            break
 
-                else:
+        # -----------------------------------------
+        # CLEAR SESSION
+        # -----------------------------------------
 
-                    print(
-                        "Conversation History:"
-                    )
+        if command == "clear":
 
-                    for message in history:
+            vault.clear_session()
 
-                        role = message.get(
-                            "role",
-                            "unknown"
-                        )
-
-                        content = message.get(
-                            "content",
-                            ""
-                        )
-
-                        print(
-                            f"{role.capitalize()}: "
-                            f"{content}"
-                        )
-
-                print()
-
-                continue
-
-            # ------------------------------------------
-            # CLEAR SESSION
-            # ------------------------------------------
-
-            if command == "clear":
-
-                orchestrator.clear_session()
-
-                print(
-                    "\nConversation session "
-                    "cleared.\n"
-                )
-
-                continue
-
-            # ------------------------------------------
-            # SHOW MEMORY
-            # ------------------------------------------
-
-            if command == "memory":
-
-                print_memory(
-                    orchestrator
-                )
-
-                continue
-
-            # ------------------------------------------
-            # CLEAR ALL MEMORY
-            # ------------------------------------------
-
-            if command == "clear memory":
-
-                orchestrator.clear_memory()
-
-                print(
-                    "\nAll long-term memory "
-                    "has been cleared.\n"
-                )
-
-                continue
-
-            # ------------------------------------------
-            # FORGET SPECIFIC MEMORY
-            # ------------------------------------------
-
-            if command.startswith(
-                "forget "
-            ):
-
-                memory_key = user_input[
-                    len("forget "):
-                ].strip()
-
-                forget_memory(
-                    orchestrator,
-                    memory_key
-                )
-
-                continue
-
-            # ------------------------------------------
-            # NORMAL AI REQUEST
-            # ------------------------------------------
-
+            print()
             print(
-                "\nV.A.U.L.T. is thinking...\n"
+                "Conversation memory cleared."
             )
+            print()
 
-            response = orchestrator.run(
+            continue
+
+        # -----------------------------------------
+        # SHOW MEMORY
+        # -----------------------------------------
+
+        if command == "memory":
+
+            memory = vault.get_memory()
+
+            print()
+
+            if not memory:
+
+                print(
+                    "No persistent memory stored."
+                )
+
+            else:
+
+                print(
+                    "PERSISTENT MEMORY:"
+                )
+
+                print()
+
+                for key, value in memory.items():
+
+                    print(
+                        f"{key}: {value}"
+                    )
+
+            print()
+
+            continue
+
+        # -----------------------------------------
+        # CLEAR ALL MEMORY
+        # -----------------------------------------
+
+        if command == "clearall":
+
+            vault.clear_all_memory()
+
+            print()
+            print(
+                "All memory cleared."
+            )
+            print()
+
+            continue
+
+        # -----------------------------------------
+        # PROCESS TASK
+        # -----------------------------------------
+
+        print()
+
+        print(
+            "V.A.U.L.T. thinking..."
+        )
+
+        print()
+
+        try:
+
+            result = vault.run(
                 user_input
             )
 
             print(
-                f"V.A.U.L.T.: {response}\n"
+                "V.A.U.L.T. >"
             )
-
-        except KeyboardInterrupt:
 
             print(
-                "\n\nShutting down "
-                "V.A.U.L.T. Goodbye."
+                result
             )
 
-            break
-
-        except Exception as exc:
+        except Exception as error:
 
             print(
-                f"\nSystem Error: {exc}\n"
+                "V.A.U.L.T. ERROR:"
             )
+
+            print(
+                type(error).__name__
+            )
+
+            print(
+                error
+            )
+
+        print()
 
 
 if __name__ == "__main__":
+
     main()

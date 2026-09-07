@@ -1,0 +1,32 @@
+{
+  "models": [
+    {
+      "model_name": "vault-engineering-e2a33a140543",
+      "artifact_id": "e2a33a140543",
+      "base_model": "qwen3:4b",
+      "task_type": "engineering",
+      "dataset_version": 1,
+      "created_at": "2026-09-07T08:22:23.428561",
+      "registered_at": "2026-09-07T08:22:23.430064",
+      "runtime": "mock",
+      "status": "approved",
+      "evaluation_score": 0.92,
+      "base_score": 0.8,
+      "improvement": 0.12
+    },
+    {
+      "model_name": "vault-engineering-73ae427e2a38",
+      "artifact_id": "73ae427e2a38",
+      "base_model": "qwen3:4b",
+      "task_type": "engineering",
+      "dataset_version": 1,
+      "created_at": "2026-09-07T08:23:35.618102",
+      "registered_at": "2026-09-07T08:23:35.619015",
+      "runtime": "mock",
+      "status": "approved",
+      "evaluation_score": 0.9,
+      "base_score": 0.8,
+      "improvement": 0.09999999999999998
+    }
+  ]
+}

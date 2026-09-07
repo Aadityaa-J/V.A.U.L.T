@@ -1,0 +1,7 @@
+{"instruction": "Input power is 10 kW and useful hydraulic power is 8 kW.", "input": "", "output": "Efficiency = 8 / 10 = 0.8 = 80%.", "task_type": "engineering", "source_id": "7c48dd6170f18f4638a3af5b25def50ef037247adbf693df9c1f1479924fdf48"}
+{"instruction": "Input power is 10 kW and useful power is 8 kW.", "input": "", "output": "Pump efficiency = 8 / 10 = 0.8 = 80%.", "task_type": "engineering", "source_id": "c1030022c8156e570bcb6ecbfa220d4a0fef1bb8fec35309d91e8becabe9499b"}
+{"instruction": "Engineering question 1", "input": "", "output": "Engineering answer 1", "task_type": "engineering", "source_id": "c05d7d05c6a40655cba9292ab7a36151218a0ae9d7da03fbec48f2888a72c5c5"}
+{"instruction": "Engineering question 2", "input": "", "output": "Engineering answer 2", "task_type": "engineering", "source_id": "33f484decee7fd9c0b0beebc97ffc61453e4f14bdddd2424d2daa9cbc80bb5a6"}
+{"instruction": "Engineering question 3", "input": "", "output": "Engineering answer 3", "task_type": "engineering", "source_id": "221a05cba2b5d50f28f8f3346c1d9b66b2d35f0dd6bb2cf6f525a4fb5b7b2d16"}
+{"instruction": "Engineering question 4", "input": "", "output": "Engineering answer 4", "task_type": "engineering", "source_id": "3db1af030bdab99cdf5b67bb9843bb5db5d70c1171d939ed8e08b119e28fa18c"}
+{"instruction": "Engineering question 5", "input": "", "output": "Engineering answer 5", "task_type": "engineering", "source_id": "7464a239365546d7ea9f4598567442ca393668b528922dad68aa221ce3eceba3"}

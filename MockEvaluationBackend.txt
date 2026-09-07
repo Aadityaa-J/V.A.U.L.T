@@ -1,0 +1,119 @@
+class MockEvaluationBackend(
+    EvaluationBackend
+):
+
+    """
+    Development evaluation backend.
+
+    Allows the complete V.A.U.L.T.
+    fine-tuning lifecycle to be tested without
+    loading or running real models.
+    """
+
+    def __init__(
+        self,
+        scores: Optional[
+            Dict[str, float]
+        ] = None,
+        should_fail: bool = False,
+        base_score: float = 0.80,
+        candidate_score: float = 0.90,
+    ):
+
+        self.scores = scores or {}
+
+        self.should_fail = should_fail
+
+        self.base_score = float(
+            base_score
+        )
+
+        self.candidate_score = float(
+            candidate_score
+        )
+
+    def evaluate(
+        self,
+        model: Dict[str, Any],
+        evaluation_dataset: Any,
+    ) -> Dict[str, Any]:
+
+        # ----------------------------------------------
+        # SIMULATE FAILURE
+        # ----------------------------------------------
+
+        if self.should_fail:
+
+            raise RuntimeError(
+                "Mock evaluation failure."
+            )
+
+        # ----------------------------------------------
+        # GET MODEL NAME
+        # ----------------------------------------------
+
+        model_name = model.get(
+            "model_name"
+        )
+
+        if not model_name:
+
+            raise ValueError(
+                "Model name is required "
+                "for evaluation."
+            )
+
+        # ----------------------------------------------
+        # EXPLICIT SCORE
+        #
+        # Explicit scores always have priority.
+        # ----------------------------------------------
+
+        if model_name in self.scores:
+
+            score = self.scores[
+                model_name
+            ]
+
+        # ----------------------------------------------
+        # BASE MODEL SCORE
+        # ----------------------------------------------
+
+        elif model_name == "qwen3:4b":
+
+            score = self.base_score
+
+        # ----------------------------------------------
+        # TRAINED V.A.U.L.T. MODEL SCORE
+        #
+        # Development/testing behavior.
+        # ----------------------------------------------
+
+        elif model_name.startswith(
+            "vault-"
+        ):
+
+            score = self.candidate_score
+
+        # ----------------------------------------------
+        # UNKNOWN MODEL
+        # ----------------------------------------------
+
+        else:
+
+            score = 0.0
+
+        return {
+
+            "success": True,
+
+            "model_name":
+                model_name,
+
+            "score":
+                float(score),
+
+            "evaluation_dataset":
+                evaluation_dataset,
+
+        }
