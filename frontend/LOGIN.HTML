@@ -1,0 +1,551 @@
+<!DOCTYPE html><html class="dark" lang="en"><head>
+<meta charset="utf-8">
+<meta content="width=device-width, initial-scale=1.0" name="viewport">
+<title>V.A.U.L.T. // SECURE AUTHENTICATION</title>
+<link href="https://fonts.googleapis.com" rel="preconnect">
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect">
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700&amp;family=JetBrains+Mono:ital,wght@0,300;0,400;0,500;0,600;0,700;1,400&amp;family=Syne:wght@400;500;600;700;800&amp;display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet">
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<script id="tailwind-config">
+    tailwind.config = {
+      darkMode: "class",
+      theme: {
+        extend: {
+          "colors": {
+            "secondary": "#89ceff",
+            "on-error": "#690005",
+            "primary-fixed-dim": "#7bd0ff",
+            "on-tertiary": "#131e8c",
+            "surface-dim": "#111319",
+            "primary": "#8ed5ff",
+            "surface-container-highest": "#33353b",
+            "error": "#ffb4ab",
+            "inverse-surface": "#e2e2ea",
+            "outline-variant": "#3e484f",
+            "secondary-fixed": "#c9e6ff",
+            "surface-container-low": "#191c21",
+            "on-primary-fixed-variant": "#004c69",
+            "on-primary": "#00354a",
+            "tertiary": "#c5c9ff",
+            "inverse-on-surface": "#2e3036",
+            "secondary-container": "#00a2e6",
+            "secondary-fixed-dim": "#89ceff",
+            "on-error-container": "#ffdad6",
+            "background": "#111319",
+            "inverse-primary": "#00668a",
+            "on-secondary": "#00344d",
+            "tertiary-container": "#a3abff",
+            "surface": "#111319",
+            "surface-container": "#1d2025",
+            "on-tertiary-fixed": "#000767",
+            "on-background": "#e2e2ea",
+            "on-secondary-fixed-variant": "#004c6e",
+            "tertiary-fixed": "#e0e0ff",
+            "error-container": "#93000a",
+            "tertiary-fixed-dim": "#bdc2ff",
+            "surface-container-lowest": "#0c0e13",
+            "on-primary-container": "#004965",
+            "primary-fixed": "#c4e7ff",
+            "on-secondary-fixed": "#001e2f",
+            "on-primary-fixed": "#001e2c",
+            "on-tertiary-container": "#2c37a0",
+            "outline": "#87929a",
+            "surface-container-high": "#282a30",
+            "surface-tint": "#7bd0ff",
+            "on-surface": "#e2e2ea",
+            "on-secondary-container": "#00344e",
+            "on-tertiary-fixed-variant": "#2f3aa3",
+            "surface-variant": "#33353b",
+            "on-surface-variant": "#bdc8d1",
+            "surface-bright": "#37393f",
+            "primary-container": "#38bdf8"
+          },
+          "borderRadius": {
+            "DEFAULT": "0.125rem",
+            "lg": "0.25rem",
+            "xl": "0.5rem",
+            "full": "0.75rem"
+          },
+          "spacing": {
+            "pad-spacious": "2rem",
+            "pad-compact": "0.5rem",
+            "pad-base": "1rem",
+            "pad-monument": "3.5rem",
+            "pad-relaxed": "1.5rem",
+            "pad-snug": "0.75rem",
+            "pad-micro": "0.25rem",
+            "margin-edge": "2.5rem",
+            "grid-hairline": "1px",
+            "gap-channel": "1.5rem"
+          },
+          "fontFamily": {
+            "headline-md": ["Geist"],
+            "label-micro": ["JetBrains Mono"],
+            "display-lg-mobile": ["Syne"],
+            "display-xl-mobile": ["Syne"],
+            "display-xl": ["Syne"],
+            "label-telemetry": ["JetBrains Mono"],
+            "headline-sm": ["Geist"],
+            "display-lg": ["Syne"],
+            "label-code": ["JetBrains Mono"],
+            "body-md": ["Geist"],
+            "body-sm": ["Geist"],
+            "body-lg": ["Geist"]
+          },
+          "fontSize": {
+            "headline-md": ["24px", { "lineHeight": "32px", "letterSpacing": "-0.015em", "fontWeight": "500" }],
+            "label-micro": ["9px", { "lineHeight": "12px", "letterSpacing": "0.14em", "fontWeight": "600" }],
+            "display-lg-mobile": ["28px", { "lineHeight": "36px", "letterSpacing": "-0.01em", "fontWeight": "500" }],
+            "display-xl-mobile": ["36px", { "lineHeight": "44px", "letterSpacing": "-0.02em", "fontWeight": "600" }],
+            "display-xl": ["56px", { "lineHeight": "64px", "letterSpacing": "-0.03em", "fontWeight": "600" }],
+            "label-telemetry": ["11px", { "lineHeight": "14px", "letterSpacing": "0.08em", "fontWeight": "500" }],
+            "headline-sm": ["18px", { "lineHeight": "26px", "letterSpacing": "-0.01em", "fontWeight": "500" }],
+            "display-lg": ["40px", { "lineHeight": "48px", "letterSpacing": "-0.02em", "fontWeight": "500" }],
+            "label-code": ["13px", { "lineHeight": "18px", "letterSpacing": "-0.01em", "fontWeight": "500" }],
+            "body-md": ["14px", { "lineHeight": "22px", "letterSpacing": "0em", "fontWeight": "400" }],
+            "body-sm": ["12px", { "lineHeight": "18px", "letterSpacing": "0.01em", "fontWeight": "400" }],
+            "body-lg": ["16px", { "lineHeight": "26px", "letterSpacing": "-0.005em", "fontWeight": "400" }]
+          }
+        },
+      },
+    }
+  </script>
+<style>
+    .material-symbols-outlined {
+      font-family: 'Material Symbols Outlined';
+      font-weight: normal;
+      font-style: normal;
+      font-size: 16px;
+      line-height: 1;
+      letter-spacing: normal;
+      text-transform: none;
+      display: inline-block;
+      white-space: nowrap;
+      word-wrap: normal;
+      direction: ltr;
+      -webkit-font-smoothing: antialiased;
+    }
+    
+    .technical-grid {
+      background-size: 32px 32px;
+      background-image: 
+        linear-gradient(to right, rgba(56, 189, 248, 0.02) 1px, transparent 1px),
+        linear-gradient(to bottom, rgba(56, 189, 248, 0.02) 1px, transparent 1px);
+    }
+
+    .optical-glow {
+      box-shadow: 0 0 50px -10px rgba(56, 189, 248, 0.15), 0 0 0 1px rgba(56, 189, 248, 0.22), 0 25px 50px -12px rgba(0, 0, 0, 0.85);
+    }
+    
+    .button-glow:hover {
+      box-shadow: 0 0 20px rgba(56, 189, 248, 0.45);
+    }
+
+    @keyframes pulse-subtle {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.4; transform: scale(0.92); }
+    }
+    .pulse-pip {
+      animation: pulse-subtle 2.4s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+    }
+  </style>
+</head>
+<body class="bg-[#07090e] text-on-surface font-body-md antialiased h-screen w-screen overflow-hidden select-none flex flex-col justify-between relative">
+<!-- Fluid Ambient Smoke Shader Background -->
+<!-- STITCH_SHADER_START:ANIMATION_12 class="absolute inset-0 w-full h-full pointer-events-none" -->
+<div class="absolute inset-0 w-full h-full pointer-events-none" style="display:block;">
+<canvas id="shader-canvas-ANIMATION_12" style="display:block;width:100%;height:100%"></canvas>
+<script>
+(function() {
+  const canvas = document.getElementById('shader-canvas-ANIMATION_12');
+
+  // Sync the WebGL drawing-buffer size with the CSS-driven layout size.
+  // This fires on initial layout and whenever the element is resized.
+  function syncSize() {
+    const w = canvas.clientWidth  || 1280;
+    const h = canvas.clientHeight || 720;
+    if (canvas.width !== w || canvas.height !== h) {
+      canvas.width  = w;
+      canvas.height = h;
+    }
+  }
+  if (typeof ResizeObserver !== 'undefined') {
+    new ResizeObserver(syncSize).observe(canvas);
+  }
+  syncSize();
+
+  const gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
+  if (!gl) return;
+  const vs = `attribute vec2 a_position;
+varying vec2 v_texCoord;
+void main() {
+  v_texCoord = a_position * 0.5 + 0.5;
+  gl_Position = vec4(a_position, 0.0, 1.0);
+}`;
+  const fs = `precision highp float;
+uniform float u_time;
+uniform vec2 u_resolution;
+uniform vec2 u_mouse;
+
+// Simplex / Curl noise foundation for organic vapor wisps
+vec3 mod289(vec3 x) { return x - floor(x * (1.0 / 289.0)) * 289.0; }
+vec4 mod289(vec4 x) { return x - floor(x * (1.0 / 289.0)) * 289.0; }
+vec4 permute(vec4 x) { return mod289(((x * 34.0) + 1.0) * x); }
+vec4 taylorInvSqrt(vec4 r) { return 1.79284291400159 - 0.85373472095314 * r; }
+
+float snoise(vec3 v) {
+  const vec2 C = vec2(1.0 / 6.0, 1.0 / 3.0);
+  const vec4 D = vec4(0.0, 0.5, 1.0, 2.0);
+
+  vec3 i  = floor(v + dot(v, C.yyy));
+  vec3 x0 = v - i + dot(i, C.xxx);
+
+  vec3 g = step(x0.yzx, x0.xyz);
+  vec3 l = 1.0 - g;
+  vec3 i1 = min(g.xyz, l.zxy);
+  vec3 i2 = max(g.xyz, l.zxy);
+
+  vec3 x1 = x0 - i1 + C.xxx;
+  vec3 x2 = x0 - i2 + C.yyy;
+  vec3 x3 = x0 - D.yyy;
+
+  i = mod289(i);
+  vec4 p = permute(permute(permute(
+             i.z + vec4(0.0, i1.z, i2.z, 1.0))
+           + i.y + vec4(0.0, i1.y, i2.y, 1.0))
+           + i.x + vec4(0.0, i1.x, i2.x, 1.0));
+
+  float n_ = 0.142857142857;
+  vec3 ns = n_ * D.wyz - D.xzx;
+
+  vec4 j = p - 49.0 * floor(p * ns.z * ns.z);
+
+  vec4 x_ = floor(j * ns.z);
+  vec4 y_ = floor(j - 7.0 * x_);
+
+  vec4 x = x_ * ns.x + ns.yyyy;
+  vec4 y = y_ * ns.x + ns.yyyy;
+  vec4 h = 1.0 - abs(x) - abs(y);
+
+  vec4 b0 = vec4(x.xy, y.xy);
+  vec4 b1 = vec4(x.zw, y.zw);
+
+  vec4 s0 = floor(b0) * 2.0 + 1.0;
+  vec4 s1 = floor(b1) * 2.0 + 1.0;
+  vec4 sh = -step(h, vec4(0.0));
+
+  vec4 a0 = b0.xzyw + s0.xzyw * sh.xxyy;
+  vec4 a1 = b1.xzyw + s1.xzyw * sh.zzww;
+
+  vec3 p0 = vec3(a0.xy, h.x);
+  vec3 p1 = vec3(a0.zw, h.y);
+  vec3 p2 = vec3(a1.xy, h.z);
+  vec3 p3 = vec3(a1.zw, h.w);
+
+  vec4 norm = taylorInvSqrt(vec4(dot(p0, p0), dot(p1, p1), dot(p2, p2), dot(p3, p3)));
+  p0 *= norm.x;
+  p1 *= norm.y;
+  p2 *= norm.z;
+  p3 *= norm.w;
+
+  vec4 m = max(0.6 - vec4(dot(x0, x0), dot(x1, x1), dot(x2, x2), dot(x3, x3)), 0.0);
+  m = m * m;
+  return 42.0 * dot(m * m, vec4(dot(p0, x0), dot(p1, x1), dot(p2, x2), dot(p3, x3)));
+}
+
+// Multi-octave Fractional Brownian Motion for silky, fine smoke tendrils
+float fbm(vec3 p, int octaves) {
+  float v = 0.0;
+  float a = 0.5;
+  vec3 shift = vec3(24.5, 87.2, 13.9);
+  for (int i = 0; i < 5; ++i) {
+    if (i >= octaves) break;
+    v += a * snoise(p);
+    p = p * 2.12 + shift;
+    a *= 0.48;
+  }
+  return v;
+}
+
+void main() {
+  vec2 uv = gl_FragCoord.xy / u_resolution.xy;
+  vec2 p = (gl_FragCoord.xy - 0.5 * u_resolution.xy) / min(u_resolution.x, u_resolution.y);
+
+  // Subtle interactive parallax offset based on cursor / screen center
+  vec2 mouseNorm = (u_mouse - 0.5 * u_resolution) / min(u_resolution.x, u_resolution.y);
+  p += mouseNorm * 0.035;
+
+  // Base background: pristine dark obsidian void (#0a0d14)
+  vec3 baseVoid = vec3(0.039, 0.051, 0.078);
+
+  // Gentle, calm time progression
+  float t = u_time * 0.055;
+
+  // Card clearance mask: ensure the login card region stays legible & calm
+  // Login card is roughly centered, aspect ~ 440px wide by 580px high
+  vec2 cardCoords = abs(p);
+  float cardDistX = smoothstep(0.16, 0.44, cardCoords.x);
+  float cardDistY = smoothstep(0.20, 0.48, cardCoords.y);
+  float flankWeight = clamp(cardDistX * 1.35 + cardDistY * 0.35, 0.0, 1.0);
+  
+  // Center pass-through allows only 12% subtle diffuse mist behind card, 100% on flanks
+  float occlusionMask = mix(0.12, 1.0, flankWeight);
+
+  // --- LAYER 1: Deep Indigo Atmospheric Base Mist (Slow, expansive) ---
+  vec3 coordBase = vec3(p * 1.2, t * 0.35);
+  vec2 warp1 = vec2(
+    fbm(coordBase + vec3(0.0, 0.0, 0.0), 3),
+    fbm(coordBase + vec3(4.3, 1.7, 0.4), 3)
+  );
+  float baseVapor = fbm(vec3(p * 1.4 + warp1 * 0.8, t * 0.4 + 1.2), 4);
+  baseVapor = smoothstep(-0.15, 0.75, baseVapor);
+
+  // --- LAYER 2: Primary Wisps & Flowing Filaments (Curl & dissipate) ---
+  // Flowing upwards and gently wrapping around the central card
+  vec3 coordWisps = vec3(p * 2.2 + vec2(warp1.x * 0.6, -t * 0.2), t * 0.5);
+  vec2 warp2 = vec2(
+    fbm(coordWisps + vec3(2.1, 7.4, 0.8), 4),
+    fbm(coordWisps + vec3(6.5, 3.2, 1.5), 4)
+  );
+  float fineWisps = fbm(vec3(p * 2.6 + warp2 * 1.1, t * 0.65), 5);
+  fineWisps = smoothstep(0.1, 0.82, fineWisps);
+
+  // --- LAYER 3: Traveling Energy Strands (Occasional cyan luminescence pulse) ---
+  // Slow sinusoidal traveling light filament drifting across the smoke currents
+  float pulseCycle = sin(u_time * 0.35 + p.y * 1.8 + warp2.y * 3.0);
+  float energyStrand = smoothstep(0.86, 0.98, pulseCycle) * fineWisps;
+  
+  // A secondary fast subtle fiber
+  float microFiber = sin(p.x * 4.2 - p.y * 2.5 + warp1.x * 5.0 - u_time * 0.5);
+  microFiber = smoothstep(0.92, 0.99, microFiber) * fineWisps * flankWeight;
+
+  // --- PALETTE DEFINITION ---
+  vec3 colorDeepNavy   = vec3(0.055, 0.145, 0.28); // #0e2547
+  vec3 colorMutedCyan   = vec3(0.14, 0.46, 0.72);   // #2476b8
+  vec3 colorLuminousCyan = vec3(0.22, 0.74, 0.96);   // #38bdf8 (V.A.U.L.T. Primary)
+  vec3 colorAquaCore    = vec3(0.55, 0.92, 1.0);    // #8cebff (Energy highlight)
+
+  // Blend smoke colors organically based on curl intensity
+  vec3 smokeTint = mix(colorDeepNavy, colorMutedCyan, clamp(warp2.x * 1.3 + 0.3, 0.0, 1.0));
+  smokeTint = mix(smokeTint, colorLuminousCyan, fineWisps * 0.65);
+
+  // Combine layers with occlusion mask
+  float combinedDensity = (baseVapor * 0.35 + fineWisps * 0.65) * occlusionMask;
+  // Keep translucent, subtle, non-intrusive (max ~0.38 alpha weight)
+  combinedDensity = clamp(combinedDensity * 0.46, 0.0, 0.55);
+
+  vec3 finalSmoke = smokeTint * combinedDensity;
+  
+  // Add cyan light pulses & filaments
+  finalSmoke += colorLuminousCyan * (energyStrand * 0.45 * occlusionMask);
+  finalSmoke += colorAquaCore * (microFiber * 0.35);
+
+  // Very subtle radial core glow directly behind the card for gentle atmospheric staging
+  float distCenter = length(p * vec2(1.15, 1.35));
+  float backGlow = exp(-distCenter * 2.8) * 0.18;
+  vec3 ambientBacklight = colorMutedCyan * backGlow;
+
+  // Subtle floating micro telemetry embers / data sparks
+  float sparkNoise = sin(p.x * 36.0 + t * 1.5) * cos(p.y * 36.0 - t * 1.2);
+  float sparks = smoothstep(0.992, 1.0, sparkNoise) * fineWisps * flankWeight * 0.25;
+  vec3 sparkColor = colorAquaCore * sparks;
+
+  // Final composite
+  vec3 outputColor = baseVoid + ambientBacklight + finalSmoke + sparkColor;
+
+  // Soft cinematic vignette around viewport borders
+  float vignette = 1.0 - smoothstep(0.65, 1.45, length(p));
+  outputColor *= (0.80 + 0.20 * vignette);
+
+  gl_FragColor = vec4(outputColor, 1.0);
+}
+`;
+  function cs(type, src) {
+    const s = gl.createShader(type);
+    gl.shaderSource(s, src);
+    gl.compileShader(s);
+    return s;
+  }
+  const prog = gl.createProgram();
+  gl.attachShader(prog, cs(gl.VERTEX_SHADER, vs));
+  gl.attachShader(prog, cs(gl.FRAGMENT_SHADER, fs));
+  gl.linkProgram(prog);
+  gl.useProgram(prog);
+  const buf = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1, 1,-1, -1,1, 1,1]), gl.STATIC_DRAW);
+  const pos = gl.getAttribLocation(prog, 'a_position');
+  gl.enableVertexAttribArray(pos);
+  gl.vertexAttribPointer(pos, 2, gl.FLOAT, false, 0, 0);
+  const uTime = gl.getUniformLocation(prog, 'u_time');
+  const uRes = gl.getUniformLocation(prog, 'u_resolution');
+  const uMouse = gl.getUniformLocation(prog, 'u_mouse');
+
+  // u_mouse is in pixel coordinates matching u_resolution (ShaderToy convention).
+  // Shaders that need normalized coords should use: u_mouse / u_resolution.
+  let mouse = { x: canvas.width / 2, y: canvas.height / 2 };
+  window.addEventListener('mousemove', (event) => {
+    const rect = canvas.getBoundingClientRect();
+    if (rect.width && rect.height) {
+      const nx = (event.clientX - rect.left) / rect.width;
+      const ny = 1.0 - (event.clientY - rect.top) / rect.height;
+      mouse.x = nx * canvas.width;
+      mouse.y = ny * canvas.height;
+    }
+  });
+
+  function render(t) {
+    if (typeof ResizeObserver === 'undefined') syncSize();
+    gl.viewport(0, 0, canvas.width, canvas.height);
+    if (uTime) gl.uniform1f(uTime, t * 0.001);
+    if (uRes) gl.uniform2f(uRes, canvas.width, canvas.height);
+    if (uMouse) gl.uniform2f(uMouse, mouse.x, mouse.y);
+    gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+    requestAnimationFrame(render);
+  }
+  render(0);
+})();
+</script>
+</div>
+<!-- STITCH_SHADER_END:ANIMATION_12 -->
+<!-- Atmospheric Technical Layering (Subtle Coordinate Grid & Soft Vignette/Radial Atmosphere) -->
+<div class="absolute inset-0 technical-grid pointer-events-none z-0 opacity-70"></div>
+<div class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[720px] h-[580px] bg-gradient-to-b from-primary-container/10 via-primary/5 to-transparent rounded-full blur-[130px] pointer-events-none z-0"></div>
+<!-- Minimal Top Bar (Locked Top Destination Shell) -->
+<header class="relative z-20 w-full px-margin-edge py-pad-snug flex items-center justify-between border-b border-outline-variant/15 bg-surface-container-lowest/60 backdrop-blur-md">
+<!-- Left: Brand Core -->
+<div class="flex items-center space-x-3">
+<div class="flex items-center space-x-2">
+<span class="w-1.5 h-1.5 bg-primary rounded-none shadow-[0_0_6px_#8ed5ff]"></span>
+<span class="font-display-lg text-headline-sm tracking-widest text-on-surface font-bold">V.A.U.L.T.</span>
+</div>
+<span class="text-outline-variant">/</span>
+<span class="font-label-micro text-label-micro tracking-[0.2em] text-outline uppercase font-medium">LOCAL INDUSTRIAL INTELLIGENCE</span>
+</div>
+<!-- Right: Telemetry Isolation Status Pill -->
+<div class="flex items-center space-x-4">
+<div class="flex items-center space-x-2 bg-surface-container-lowest/90 px-pad-snug py-pad-micro rounded border border-outline-variant/30">
+<span class="w-1.5 h-1.5 rounded-full bg-primary pulse-pip shadow-[0_0_8px_#38bdf8]"></span>
+<span class="font-label-micro text-label-micro text-primary tracking-widest uppercase">SECURE ENCLAVE // ACCESS</span>
+</div>
+<div class="hidden md:flex items-center space-x-1.5 font-label-micro text-label-micro text-outline">
+<span>PORT:</span>
+<span class="text-on-surface">AIRGAP-0</span>
+</div>
+</div>
+</header>
+<!-- Authentication Enclave (Center Stage) -->
+<main class="relative z-10 flex-1 flex items-center justify-center px-pad-base py-pad-snug">
+<div class="w-full max-w-[440px] bg-[#0c1017]/90 backdrop-blur-2xl rounded-xl border border-outline-variant/40 optical-glow p-pad-spacious relative transition-all duration-300">
+<!-- Top Technical Decorative Corners -->
+<div class="absolute top-2 left-2 text-outline-variant/40 font-label-micro text-[8px] select-none tracking-widest">ENCLAVE::SEC_01</div>
+<div class="absolute top-2 right-2 text-outline-variant/40 font-label-micro text-[8px] select-none tracking-widest">ISO-9001</div>
+<!-- Panel Header & Geometric Glyph -->
+<div class="flex flex-col items-center text-center mt-1">
+<!-- Isometric Cyber-Geometric Glyph -->
+<div class="w-10 h-10 mb-3.5 relative flex items-center justify-center">
+<div class="absolute inset-0 border border-primary/30 rotate-45 rounded-[2px] transition-transform duration-700 hover:rotate-90"></div>
+<div class="w-4 h-4 bg-primary/15 border border-primary rounded-[1px] rotate-45 flex items-center justify-center shadow-[0_0_12px_rgba(56,189,248,0.4)]">
+<span class="w-1 h-1 bg-primary rounded-full"></span>
+</div>
+</div>
+<h1 class="font-display-lg text-headline-md tracking-wider text-on-surface font-semibold uppercase">V.A.U.L.T.</h1>
+<p class="font-label-micro text-label-micro tracking-[0.22em] text-primary/80 mt-1 uppercase">SECURE INDUSTRIAL INTELLIGENCE</p>
+</div>
+<!-- Divider Hairline -->
+<div class="w-full h-px bg-gradient-to-r from-transparent via-outline-variant/40 to-transparent my-pad-relaxed"></div>
+<!-- Form Context Heading -->
+<div class="mb-pad-relaxed text-left">
+<h2 class="font-headline-sm text-headline-sm text-on-surface font-medium">Enter the secure environment</h2>
+<p class="font-body-sm text-body-sm text-outline mt-0.5">Authenticate to access your private local AI workspace.</p>
+</div>
+<!-- Credentials Form -->
+<form class="space-y-4" onsubmit="event.preventDefault();">
+<!-- Operator ID -->
+<div class="space-y-1.5 text-left">
+<div class="flex justify-between items-center">
+<label class="font-label-telemetry text-label-telemetry text-outline tracking-wider uppercase" for="operator-id">OPERATOR ID</label>
+<span class="font-label-micro text-label-micro text-outline/60">UID // SHA-256</span>
+</div>
+<div class="relative">
+<input class="w-full bg-[#07090e] border border-outline-variant/40 rounded px-pad-snug py-2 font-label-code text-label-code text-on-surface placeholder:text-outline-variant/50 focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/40 transition-all duration-150" id="operator-id" placeholder="engineer@local" spellcheck="false" type="text" value="lead_runtime@local">
+<div class="absolute right-3 top-2.5 text-outline/50 pointer-events-none">
+<span class="material-symbols-outlined" data-icon="badge">badge</span>
+</div>
+</div>
+</div>
+<!-- Security Key -->
+<div class="space-y-1.5 text-left">
+<div class="flex justify-between items-center">
+<label class="font-label-telemetry text-label-telemetry text-outline tracking-wider uppercase" for="security-key">SECURITY KEY</label>
+<span class="font-label-micro text-label-micro text-primary/80">AIR-GAP HSM READY</span>
+</div>
+<div class="relative">
+<input class="w-full bg-[#07090e] border border-outline-variant/40 rounded px-pad-snug py-2 font-label-code text-label-code text-on-surface placeholder:text-outline-variant/50 focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/40 transition-all duration-150 pr-10 tracking-widest" id="security-key" placeholder="••••••••••••••••" type="password" value="pk_vault_091873491290382">
+<button class="absolute right-3 top-2.5 text-outline hover:text-on-surface transition-colors duration-150 focus:outline-none" onclick="const el = document.getElementById('security-key'); el.type = el.type === 'password' ? 'text' : 'password';" title="Toggle token visibility" type="button">
+<span class="material-symbols-outlined" data-icon="visibility">visibility</span>
+</button>
+</div>
+</div>
+<!-- Checkbox & Memory Parameters -->
+<div class="flex items-center justify-between pt-1">
+<label class="flex items-center space-x-2.5 cursor-pointer group">
+<input checked="" class="rounded-[2px] w-3.5 h-3.5 bg-[#07090e] border-outline-variant/60 text-primary-container focus:ring-0 focus:ring-offset-0 focus:border-primary transition-all cursor-pointer" type="checkbox">
+<span class="font-label-telemetry text-label-telemetry text-on-surface-variant group-hover:text-on-surface transition-colors duration-150">Remember this workstation</span>
+</label>
+<span class="font-label-micro text-label-micro text-outline/70">Local credential cache</span>
+</div>
+<!-- Primary Action Trigger -->
+<div class="pt-2">
+<button class="w-full bg-primary-container hover:bg-secondary-fixed text-on-primary-container font-headline-sm text-body-md font-semibold py-2.5 px-pad-base rounded transition-all duration-200 button-glow flex items-center justify-center space-x-2 tracking-wider uppercase active:scale-[0.99]" type="submit">
+<span>ENTER V.A.U.L.T.</span>
+<span class="material-symbols-outlined font-bold" data-icon="arrow_forward">arrow_forward</span>
+</button>
+</div>
+</form>
+<!-- Security Status Telemetry Strip (Inline Compact Pill Matrix) -->
+<div class="mt-pad-relaxed bg-surface-container-lowest/80 border border-outline-variant/20 rounded py-2 px-pad-snug flex items-center justify-between">
+<div class="flex items-center space-x-1.5 font-label-micro text-label-micro text-primary">
+<span class="w-1.5 h-1.5 rounded-full bg-primary inline-block"></span>
+<span>AIR-GAPPED</span>
+</div>
+<div class="h-2.5 w-px bg-outline-variant/30"></div>
+<div class="flex items-center space-x-1.5 font-label-micro text-label-micro text-on-surface-variant">
+<span class="w-1.5 h-1.5 rounded-full bg-primary/70 inline-block"></span>
+<span>LOCAL RUNTIME</span>
+</div>
+<div class="h-2.5 w-px bg-outline-variant/30"></div>
+<div class="flex items-center space-x-1.5 font-label-micro text-label-micro text-outline">
+<span class="w-1.5 h-1.5 rounded-full bg-primary/40 inline-block"></span>
+<span>EGRESS: 0</span>
+</div>
+</div>
+<!-- Support & Admin Routing Link -->
+<div class="mt-pad-relaxed text-center">
+<a class="font-label-telemetry text-label-telemetry text-outline hover:text-primary transition-colors duration-150 inline-flex items-center space-x-1" href="#admin-support">
+<span>Need access? Contact your system administrator</span>
+<span class="material-symbols-outlined text-[12px]" data-icon="arrow_outward">arrow_outward</span>
+</a>
+</div>
+</div>
+</main>
+<!-- Docked Bottom Telemetry Footer (Immutable Structural Anchor) -->
+<footer class="relative z-20 w-full px-margin-edge py-pad-compact border-t border-outline-variant/20 bg-surface-container-lowest/90 backdrop-blur-md flex items-center justify-between text-label-micro font-label-micro">
+<!-- Left: Status Beacon -->
+<div class="flex items-center space-x-2">
+<span class="w-1.5 h-1.5 rounded-full bg-[#38bdf8] pulse-pip shadow-[0_0_6px_#38bdf8]"></span>
+<span class="text-primary font-label-micro uppercase tracking-wider">V.A.U.L.T. / LOCAL ENVIRONMENT</span>
+</div>
+<!-- Center: Enclave Identity -->
+<div class="hidden sm:block text-outline font-label-micro uppercase tracking-widest text-center">
+      VERIFIED AIR-GAPPED CORE // LOCAL MODEL ROUTER
+    </div>
+<!-- Right: Core System ID & Egress Readout -->
+<div class="text-outline font-label-micro uppercase tracking-wider flex items-center space-x-2">
+<span class="text-on-surface-variant">SYS.ID // 8A6BA-VAULT</span>
+<span class="text-outline-variant">•</span>
+<span class="text-primary">ZERO EXTERNAL EGRESS</span>
+</div>
+</footer>
+</body></html>
