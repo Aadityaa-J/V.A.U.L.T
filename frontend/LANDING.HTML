@@ -1,7 +1,7 @@
 <!DOCTYPE html><html class="dark" lang="en"><head>
 <meta charset="utf-8">
 <meta content="width=device-width, initial-scale=1.0" name="viewport">
-<title>V.A.U.L.T. // Verifiable Air-Gapped Unrestricted Local Toolset</title>
+<title>V.A.U.L.T.</title>
 <link href="https://fonts.googleapis.com" rel="preconnect">
 <link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect">
 <link href="https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600&amp;family=JetBrains+Mono:wght@400;500;600&amp;family=Syne:wght@500;600;700&amp;family=Newsreader:ital,opsz,wght@1,6..72,400&amp;display=swap" rel="stylesheet">
@@ -163,22 +163,23 @@
 <header class="relative z-50 bg-surface-container-lowest/80 backdrop-blur-md flex justify-between items-center w-full px-margin-edge py-pad-snug border-b border-outline-variant/30">
 <!-- Brand Anchor -->
 <div class="flex items-center space-x-3">
-<div class="w-2 h-2 rounded bg-primary-container shadow-[0_0_8px_rgba(56,189,248,0.8)]"></div>
-<div class="flex flex-col">
-<span class="text-headline-sm font-headline-sm tracking-widest text-primary uppercase font-bold leading-none">V.A.U.L.T.</span>
-<span class="text-label-micro font-label-micro text-outline tracking-wider pt-0.5">LOCAL INDUSTRIAL INTELLIGENCE</span>
+<div class="flex items-center space-x-2">
+<span class="w-1.5 h-1.5 bg-primary rounded-none shadow-[0_0_6px_#8ed5ff]"></span>
+<span class="font-display-lg text-headline-sm tracking-widest text-on-surface font-bold">V.A.U.L.T.</span>
 </div>
+<span class="text-outline-variant">/</span>
+<span class="font-label-micro text-label-micro tracking-[0.2em] text-outline uppercase font-medium">LOCAL INDUSTRIAL INTELLIGENCE</span>
 </div>
 <!-- Center Navigation Links -->
 <nav class="hidden md:flex items-center space-x-8">
-<a class="text-on-surface-variant font-label-telemetry text-label-telemetry tracking-wider uppercase hover:text-on-surface transition-colors duration-150" href="#">PLATFORM</a>
+<a class="text-on-surface font-label-telemetry text-label-telemetry tracking-wider uppercase hover:text-on-surface transition-colors duration-150" href="#">PLATFORM</a>
 <a class="text-on-surface-variant font-label-telemetry text-label-telemetry tracking-wider uppercase hover:text-on-surface transition-colors duration-150" href="#">CAPABILITIES</a>
 <a class="text-on-surface-variant font-label-telemetry text-label-telemetry tracking-wider uppercase hover:text-on-surface transition-colors duration-150" href="#">AIR-GAP PROTOCOL</a>
 <a class="text-on-surface-variant font-label-telemetry text-label-telemetry tracking-wider uppercase hover:text-on-surface transition-colors duration-150" href="#">DOCUMENTATION</a>
 </nav>
 <!-- Trailing Actions -->
 <div class="flex items-center space-x-5">
-<a class="text-label-telemetry font-label-telemetry uppercase text-on-surface-variant hover:text-on-surface transition-colors tracking-wider" href="#">SIGN IN</a>
+<!--<a class="text-label-telemetry font-label-telemetry uppercase text-on-surface-variant hover:text-on-surface transition-colors tracking-wider" href="#">SIGN IN</a>-->
 <button class="bg-primary-container/20 hover:bg-primary-container/30 border border-primary-container text-on-surface font-label-telemetry text-label-telemetry uppercase px-pad-base py-pad-compact rounded flex items-center space-x-2 transition-all duration-200 shadow-[0_0_16px_rgba(56,189,248,0.25)] hover:shadow-[0_0_24px_rgba(56,189,248,0.4)]">
 <span class="tracking-widest">LAUNCH V.A.U.L.T.</span>
 <span class="material-symbols-outlined text-sm leading-none">arrow_forward</span>
@@ -213,23 +214,23 @@
 </div>
 </div>
 <!-- PRODUCT VISUALIZATION: Compact Floating AI Activity Panel -->
-<div class="card-glass w-full max-w-lg rounded-lg p-4 text-left relative overflow-hidden transition-all duration-300 hover:border-primary-container/30">
+<!-- <<div class="card-glass w-full max-w-lg rounded-lg p-4 text-left relative overflow-hidden transition-all duration-300 hover:border-primary-container/30">-->
 <!-- Card Header Strip -->
-<div class="flex items-center justify-between pb-3 border-b border-white/5 text-label-micro font-label-micro tracking-wider">
+<!--<div class="flex items-center justify-between pb-3 border-b border-white/5 text-label-micro font-label-micro tracking-wider">
 <div class="flex items-center space-x-2">
 <span class="w-1.5 h-1.5 rounded-full bg-primary-container pulse-beacon"></span>
 <span class="text-on-surface font-semibold tracking-widest uppercase">V.A.U.L.T. AGENT</span>
 </div>
 <span class="text-outline uppercase border border-white/10 px-1.5 py-0.5 rounded">ISOLATED ENCLAVE</span>
-</div>
+</div>-->
 <!-- Live Reasoning Stream -->
-<div class="py-3 flex items-center space-x-2 font-label-code text-label-code text-on-surface/90">
+<!--<div class="py-3 flex items-center space-x-2 font-label-code text-label-code text-on-surface/90">
 <span class="text-primary tracking-widest">SYS&gt;</span>
 <span class="text-slate-300" id="terminal-text">Analyzing engineering workspace...</span>
 <span class="w-1.5 h-3.5 bg-primary-container type-cursor inline-block"></span>
-</div>
+</div>-->
 <!-- Verification Matrix -->
-<div class="grid grid-cols-4 gap-2 py-2">
+<!--<div class="grid grid-cols-4 gap-2 py-2">
 <div class="bg-surface-container-lowest/70 border border-white/5 px-2 py-1.5 rounded flex items-center space-x-1.5">
 <span class="material-symbols-outlined text-primary text-[13px] leading-none">check</span>
 <span class="font-label-micro text-label-micro text-on-surface-variant uppercase tracking-wider">Documents</span>
@@ -246,9 +247,9 @@
 <span class="w-1.5 h-1.5 rounded-full bg-primary-container pulse-beacon"></span>
 <span class="font-label-micro text-label-micro text-primary uppercase tracking-wider">Verify</span>
 </div>
-</div>
+</div>-->
 <!-- Card Sub-Footer Metrics Strip -->
-<div class="pt-3 border-t border-white/5 flex items-center justify-between font-label-micro text-label-micro text-outline tracking-wider">
+<!--<div class="pt-3 border-t border-white/5 flex items-center justify-between font-label-micro text-label-micro text-outline tracking-wider">
 <div class="flex items-center space-x-2">
 <span>LOCAL MODEL ROUTER</span>
 <span class="text-outline-variant">//</span>
@@ -261,7 +262,7 @@
 <span class="font-label-telemetry">0.14MS</span>
 </div>
 </div>
-</div>
+</div>-->
 </main>
 <!-- DOCKED STATUS FOOTER -->
 <footer class="relative z-50 bg-surface-container-lowest/90 backdrop-blur-md flex justify-between items-center w-full px-margin-edge py-pad-compact text-label-micro font-label-micro border-t border-outline-variant/20 text-outline">
