@@ -38,6 +38,7 @@ from tools.adapters import (
     DocumentInfoTool,
     SearchDocumentTool,
     DocumentSummaryTool,
+    SearchKnowledgeTool,
 )
 
 
@@ -191,6 +192,8 @@ class Orchestrator:
 
                 "document_summary",
 
+                "search_knowledge",
+
                 "list_files",
 
                 "list_directory",
@@ -230,6 +233,8 @@ class Orchestrator:
                 "search_document",
 
                 "document_summary",
+
+                "search_knowledge",
 
             ],
 
@@ -300,6 +305,8 @@ class Orchestrator:
             SearchDocumentTool(),
 
             DocumentSummaryTool(),
+
+            SearchKnowledgeTool(),
 
         ]
 

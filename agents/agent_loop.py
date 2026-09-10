@@ -83,6 +83,53 @@ class AgentLoop:
             task=task
         )
 
+        # ======================================================
+        # KNOWLEDGE BASE: MANDATORY FIRST RETRIEVAL
+        # ======================================================
+        #
+        # The Document Agent has access to the semantic
+        # knowledge-base tool. Do not rely solely on the LLM
+        # to decide whether to call it: seed the agent loop
+        # with an actual retrieval result before the model
+        # gets the opportunity to answer.
+        #
+        # This keeps retrieval as an orchestration decision
+        # rather than merely a prompt instruction.
+        #
+        if "search_knowledge" in self.tools:
+            knowledge_result = self._execute_tool(
+                "search_knowledge",
+                json.dumps(
+                    {
+                        "query": task,
+                        "top_k": 4,
+                        "distance_threshold": 1.3,
+                    },
+                    ensure_ascii=False,
+                ),
+            )
+
+            context.add_step(
+                step_number=0,
+                action={
+                    "type": "tool",
+                    "name": "search_knowledge",
+                    "arguments": json.dumps(
+                        {
+                            "query": task,
+                            "top_k": 4,
+                            "distance_threshold": 1.3,
+                        },
+                        ensure_ascii=False,
+                    ),
+                },
+                observation=knowledge_result,
+            )
+
+            context.add_observation(
+                knowledge_result
+            )
+
         self.last_state = context.to_dict()
 
         for step_number in range(

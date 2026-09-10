@@ -37,6 +37,22 @@ from database import (
     delete_knowledge_file,
 )
 
+try:
+    from database import get_connection
+except ImportError:
+    get_connection = None
+
+from document_pipeline import process_document, extract_document_chunks
+from knowledge.search import search_knowledge
+from knowledge.vector_store import add_documents
+
+try:
+    from knowledge.vector_store import collection as KNOWLEDGE_COLLECTION
+    from knowledge.embeddings import embed_query
+except ImportError:
+    KNOWLEDGE_COLLECTION = None
+    embed_query = None
+
 
 # ============================================================
 # V.A.U.L.T. FRONTEND WEB SERVER
@@ -73,7 +89,8 @@ except Exception as error:
 # CHAT JOB MANAGER
 # ============================================================
 
-CHAT_EXECUTOR = ThreadPoolExecutor(max_workers=1)
+CHAT_EXECUTOR = ThreadPoolExecutor(max_workers=3)
+DOCUMENT_INDEX_EXECUTOR = ThreadPoolExecutor(max_workers=1)
 CHAT_JOBS = {}
 CHAT_JOBS_LOCK = threading.Lock()
 
@@ -91,8 +108,269 @@ FAST_GREETING_RESPONSES = {
 }
 
 
+def _fast_local_database_response(message, user_id=None):
+    """Answer deterministic inventory questions directly from SQLite.
+
+    The scope decision is made BEFORE the database lookup:
+      - explicit global/shared/company scope -> Global Knowledge Base
+      - explicit private/my/personal/local scope -> authenticated User Library
+      - otherwise -> not handled here; normal AI routing remains available
+
+    This prevents phrases such as "private db" from accidentally matching the
+    generic "database/db" vocabulary used by the Global Knowledge Base.
+    """
+    text = re.sub(r"\s+", " ", str(message or "")).strip().lower()
+    if not text:
+        return None
+
+    # ------------------------------------------------------------
+    # Inventory / listing language
+    # ------------------------------------------------------------
+    inventory_words = (
+        "what files", "what documents", "what resources", "which files",
+        "which documents", "which resources", "list files", "list documents",
+        "list resources", "show files", "show documents", "show resources",
+        "files are there", "documents are there", "resources are there",
+        "files do you have", "documents do you have", "resources do you have",
+        "what is in", "what's in", "what is there in", "what's there in",
+        "what is there", "what's there", "show me what", "tell me what",
+        "list", "show me",
+    )
+
+    has_inventory_language = any(phrase in text for phrase in inventory_words)
+    if not has_inventory_language:
+        return None
+
+    # ------------------------------------------------------------
+    # Scope vocabulary
+    # ------------------------------------------------------------
+    global_qualifiers = (
+        "global", "shared", "company", "corporate", "organization",
+        "organisational", "organizational", "enterprise",
+    )
+    global_store_words = (
+        "knowledge base", "knowledgebase", "global kb", "global db",
+        "global database", "shared kb", "shared db", "shared database",
+        "company kb", "company db", "company database",
+    )
+
+    private_qualifiers = (
+        "private", "personal", "my ", "mine", "i uploaded", "my own",
+        "user library", "private library", "local library", "local db",
+        "local database", "personal library", "personal db",
+        "personal database", "private db", "private database",
+    )
+
+    # ------------------------------------------------------------
+    # IMPORTANT: resolve PRIVATE first.
+    # "private db" contains the generic word "db", so checking generic
+    # global-store vocabulary first would incorrectly return Global KB data.
+    # ------------------------------------------------------------
+    private_inventory = any(term in text for term in private_qualifiers)
+
+    if private_inventory:
+        if not user_id:
+            return "I need an authenticated user context to list a private Library."
+
+        try:
+            rows = get_library_files(int(user_id))
+        except Exception as error:
+            print("[V.A.U.L.T.] Fast private Library lookup failed:", repr(error))
+            return None
+
+        if not rows:
+            return "Your private V.A.U.L.T. Library is currently empty."
+
+        lines = [f"Your private V.A.U.L.T. Library contains {len(rows)} file(s):", ""]
+        for index, row in enumerate(rows, start=1):
+            name = str(row.get("original_name") or row.get("name") or "Unnamed file")
+            status = str(row.get("processing_status") or "unknown").lower()
+            chunks = int(row.get("chunk_count") or 0)
+            state = "indexed" if status == "processed" and chunks > 0 else status
+            lines.append(f"{index}. {name} — {state}")
+        return "\n".join(lines)
+
+    # ------------------------------------------------------------
+    # GLOBAL Knowledge Base inventory
+    # ------------------------------------------------------------
+    has_global_qualifier = any(term in text for term in global_qualifiers)
+    has_explicit_global_store = any(term in text for term in global_store_words)
+
+    # Examples accepted here:
+    #   "what files are in your global db?"
+    #   "what is there in the global database?"
+    #   "show me the shared KB"
+    #   "what files do you have in the company knowledge base?"
+    global_inventory = has_explicit_global_store or (
+        has_global_qualifier and any(
+            word in text for word in ("db", "database", "kb", "knowledge base", "files", "documents", "resources")
+        )
+    )
+
+    if global_inventory:
+        try:
+            rows = get_knowledge_files()
+        except Exception as error:
+            print("[V.A.U.L.T.] Fast Global Knowledge lookup failed:", repr(error))
+            return None
+
+        if not rows:
+            return "The Global Knowledge Base is currently empty."
+
+        lines = [f"The Global Knowledge Base contains {len(rows)} file(s):", ""]
+        for index, row in enumerate(rows, start=1):
+            name = str(row.get("original_name") or row.get("name") or "Unnamed file")
+            status = str(row.get("processing_status") or "unknown").lower()
+            chunks = int(row.get("chunk_count") or 0)
+            state = "indexed" if status == "processed" and chunks > 0 else status
+            lines.append(f"{index}. {name} — {state}")
+        return "\n".join(lines)
+
+    # Do not guess a scope for ambiguous phrases such as "what is in the db?".
+    # Let the normal orchestrator handle them instead of returning the wrong
+    # data domain.
+    return None
+
+def _activity_event(stage, detail, status="active"):
+    from datetime import datetime
+    return {
+        "stage": stage,
+        "detail": detail,
+        "status": status,
+        "timestamp": datetime.now().isoformat(timespec="seconds"),
+    }
+
+
+def _set_job_activity(job_id, stage, detail, status="active"):
+    with CHAT_JOBS_LOCK:
+        job = CHAT_JOBS.get(job_id)
+        if job is None:
+            return
+
+        events = job.setdefault("activity", [])
+        if events and events[-1].get("status") == "active":
+            events[-1]["status"] = "complete"
+        events.append(_activity_event(stage, detail, status))
+
+
+def _attachment_context_from_chunks(user_id, storage_path, chunks, original_name=None, max_chars=30000):
+    """Convert freshly extracted chunks into request-local evidence.
+
+    This path deliberately avoids embeddings. The user's attached file can be
+    answered immediately while the same extracted chunks are indexed in the
+    background for later RAG queries.
+    """
+    original_name = original_name or Path(storage_path).name
+    results = []
+    used_chars = 0
+
+    # Generic summary/explanation requests benefit from broad file coverage.
+    # For very large files, keep a bounded context so the local model is not
+    # overwhelmed.
+    for chunk in chunks:
+        text = str(chunk.page_content or "").strip()
+        if not text:
+            continue
+
+        page = chunk.metadata.get("page")
+        remaining = max_chars - used_chars
+        if remaining <= 0:
+            break
+        if len(text) > remaining:
+            text = text[:remaining].rstrip() + "\n[Context truncated for local inference.]"
+
+        results.append({
+            "text": text,
+            "source": original_name,
+            "page": page,
+            "distance": 0.0,
+            "scope": "user",
+            "user_id": str(user_id),
+            "ocr_used": bool(chunk.metadata.get("ocr_used", False)),
+            "content_type": chunk.metadata.get("content_type", ""),
+        })
+        used_chars += len(text)
+
+    return results
+
+
+def _index_extracted_attachment(user_id, storage_path, chunks, original_name=None):
+    """Index already-extracted chunks without parsing/OCR a second time."""
+    if not chunks:
+        return
+
+    original_name = original_name or Path(storage_path).name
+    prepared = []
+    for chunk in chunks:
+        metadata = dict(chunk.metadata)
+        metadata["source"] = original_name
+        metadata["scope"] = "user"
+        metadata["user_id"] = str(int(user_id))
+        prepared.append(
+            type(chunk)(
+                page_content=chunk.page_content,
+                metadata=metadata,
+            )
+        )
+
+    stored = add_documents(
+        prepared,
+        scope="user",
+        user_id=int(user_id),
+    )
+
+    _set_library_processing_state(
+        user_id,
+        storage_path,
+        "processed",
+        ocr_used=any(bool(c.metadata.get("ocr_used", False)) for c in prepared),
+        chunk_count=stored,
+    )
+    return stored
+
+
+def _queue_attachment_index(user_id, storage_path, chunks, original_name=None):
+    """Schedule vector indexing without delaying the chat response."""
+    _set_library_processing_state(
+        user_id,
+        storage_path,
+        "processing",
+        ocr_used=any(bool(c.metadata.get("ocr_used", False)) for c in chunks),
+        chunk_count=0,
+    )
+
+    return DOCUMENT_INDEX_EXECUTOR.submit(
+        _index_extracted_attachment,
+        user_id,
+        storage_path,
+        chunks,
+        original_name,
+    )
+
+
+def _get_original_library_name(user_id, storage_path):
+    if get_connection is None or not user_id or not storage_path:
+        return Path(storage_path).name
+    try:
+        with get_connection() as connection:
+            row = connection.execute(
+                """
+                SELECT original_name
+                FROM library_files
+                WHERE user_id = ? AND storage_path = ?
+                LIMIT 1
+                """,
+                (int(user_id), str(storage_path)),
+            ).fetchone()
+            if row:
+                return str(row[0] if not hasattr(row, "keys") else row["original_name"])
+    except Exception as error:
+        print("[V.A.U.L.T.] Could not resolve original attachment name:", repr(error))
+    return Path(storage_path).name
+
+
 def start_chat_job(message, attachment_paths=None, user_id=None):
-    """Run the existing Orchestrator asynchronously with local file references."""
+    """Run an orchestration request without blocking on vector indexing."""
 
     attachment_paths = attachment_paths or []
     job_id = uuid.uuid4().hex
@@ -103,84 +381,231 @@ def start_chat_job(message, attachment_paths=None, user_id=None):
             "response": None,
             "error": None,
             "user_id": user_id,
+            "activity": [
+                _activity_event(
+                    "REQUEST RECEIVED",
+                    "V.A.U.L.T. accepted the operator request.",
+                    "complete",
+                )
+            ],
         }
 
-    # --------------------------------------------------------
-    # FAST PATH FOR SIMPLE GREETINGS
-    # --------------------------------------------------------
-    #
-    # Only use this when there are no attachments. A message such
-    # as "hi" should not wait for the local LLM, and it should not
-    # wait behind a long-running file-analysis request.
-    #
-    # We intentionally keep this list narrow so normal questions
-    # continue through the existing V.A.U.L.T. Orchestrator.
+    normalized_message = message.strip().lower() if isinstance(message, str) else ""
 
-    normalized_message = (
-        message.strip().lower()
-        if isinstance(message, str)
-        else ""
-    )
+    if not attachment_paths:
+        fast_database_response = _fast_local_database_response(message, user_id=user_id)
+        if fast_database_response is not None:
+            _set_job_activity(
+                job_id,
+                "TASK ROUTED",
+                "Deterministic local database query; model inference and semantic RAG skipped.",
+                "active",
+            )
+            with CHAT_JOBS_LOCK:
+                CHAT_JOBS[job_id]["status"] = "completed"
+                CHAT_JOBS[job_id]["response"] = fast_database_response
+            _set_job_activity(
+                job_id,
+                "RESPONSE READY",
+                "Local database response returned to the operator without model inference.",
+                "complete",
+            )
+            return job_id
 
-    if (
-        not attachment_paths
-        and normalized_message in FAST_GREETING_RESPONSES
-    ):
-
+    if not attachment_paths and normalized_message in FAST_GREETING_RESPONSES:
+        _set_job_activity(
+            job_id,
+            "TASK ROUTED",
+            "Simple greeting handled locally without model inference.",
+            "active",
+        )
         with CHAT_JOBS_LOCK:
             CHAT_JOBS[job_id]["status"] = "completed"
-            CHAT_JOBS[job_id]["response"] = (
-                FAST_GREETING_RESPONSES[normalized_message]
-            )
-
+            CHAT_JOBS[job_id]["response"] = FAST_GREETING_RESPONSES[normalized_message]
+        _set_job_activity(
+            job_id,
+            "RESPONSE READY",
+            "Local fast-path response returned to the operator.",
+            "complete",
+        )
         return job_id
 
     def run_job():
         with CHAT_JOBS_LOCK:
             CHAT_JOBS[job_id]["status"] = "processing"
 
+        _set_job_activity(
+            job_id,
+            "TASK ROUTED",
+            "Request sent to the V.A.U.L.T. Orchestrator.",
+            "active",
+        )
+
         try:
             backend_task = message
+            evidence = []
+            requested_scope = _infer_knowledge_scope(message)
+
 
             if attachment_paths:
-                attachment_lines = [
-                    "\n\nThe user attached the following local file(s). "
-                    "Treat them as references for this request. "
-                    "Use the available document tools (read_document, "
-                    "document_info, search_document, document_summary) "
-                    "when you need their contents. Do not invent file contents.",
-                ]
+                _set_job_activity(
+                    job_id,
+                    "CONTEXT ATTACHED",
+                    f"{len(attachment_paths)} local file(s) supplied as request context.",
+                    "active",
+                )
 
                 for path in attachment_paths:
-                    attachment_lines.append(
-                        f"- {Path(path).name}: {path}"
-                    )
+                    filename = _get_original_library_name(user_id, path)
+                    existing = _get_library_record_by_storage_path(user_id, path)
+                    existing_status = str((existing or {}).get("processing_status", "")).lower()
+                    existing_chunks = int((existing or {}).get("chunk_count") or 0)
 
-                backend_task += "\n" + "\n".join(attachment_lines)
+                    # If the vector index is already ready, use it. Otherwise,
+                    # extract directly and answer immediately from the file.
+                    if existing_status == "processed" and existing_chunks > 0:
+                        _set_job_activity(
+                            job_id,
+                            "DOCUMENT INGESTION",
+                            f"'{filename}' is already indexed; reusing the existing extraction.",
+                            "complete",
+                        )
+                        file_evidence = _retrieve_attached_file_evidence(
+                            user_id=user_id,
+                            query=message,
+                            attachment_paths=[path],
+                            top_k=16,
+                        )
+                        evidence.extend(file_evidence)
+                    else:
+                        _set_job_activity(
+                            job_id,
+                            "DOCUMENT INGESTION",
+                            f"Extracting '{filename}' directly for this request; vector indexing will continue in the background.",
+                            "active",
+                        )
+
+                        chunks = extract_document_chunks(Path(path), source_name=filename)
+                        file_evidence = _attachment_context_from_chunks(
+                            user_id=user_id,
+                            storage_path=path,
+                            chunks=chunks,
+                            original_name=filename,
+                        )
+                        evidence.extend(file_evidence)
+
+                        if any(bool(c.metadata.get("ocr_used", False)) for c in chunks):
+                            _set_job_activity(
+                                job_id,
+                                "OCR / VISION EXTRACTION",
+                                f"OCR was used to recover readable content from '{filename}'.",
+                                "complete",
+                            )
+
+                        _queue_attachment_index(
+                            user_id=user_id,
+                            storage_path=path,
+                            chunks=chunks,
+                            original_name=filename,
+                        )
+
+                        _set_job_activity(
+                            job_id,
+                            "VECTOR INDEX",
+                            f"Background indexing queued for {len(chunks)} extracted chunk(s) from '{filename}'.",
+                            "complete",
+                        )
+
+                html_attachment = any(
+                    str(item.get("content_type", "")).lower() == "html"
+                    for item in evidence
+                )
+                backend_task += (
+                    "\n\nDOCUMENT-GROUNDED REQUEST RULES:\n"
+                    "The operator attached private V.A.U.L.T. Library file(s). "
+                    "For this request, ONLY the attached file content is authoritative. "
+                    "Do not use any other Global KB or Library document.\n"
+                    "Answer the operator's actual request directly. For summarize/explain requests, "
+                    "synthesize the supplied document content in clear language; do not describe the "
+                    "retrieval process unless asked. If the attached file does not support a claim, say so.\n"
+                    + (
+                        "The attached file is HTML. Treat it as a webpage/document, not as a PDF or raw program. "
+                        "Explain the human-readable content represented by the page. Ignore HTML markup, JavaScript, "
+                        "CSS, hidden implementation details, telemetry, and navigation boilerplate unless the operator "
+                        "explicitly asks about the HTML source/code.\n"
+                        if html_attachment else ""
+                    )
+                )
+
+            _set_job_activity(
+                job_id,
+                "RETRIEVAL",
+                (
+                    "Using evidence exclusively from the attached file(s)."
+                    if attachment_paths
+                    else
+                    (
+                        "Searching only the Global Knowledge Base."
+                        if requested_scope == "global"
+                        else "Searching only the authenticated user's private Library."
+                        if requested_scope == "user"
+                        else "Searching authorized Global KB + the authenticated user's private Library."
+                    )
+                ),
+                "active",
+            )
+
+            if not attachment_paths:
+                evidence = _retrieve_authorized_evidence(
+                    user_id=user_id,
+                    query=message,
+                    top_k=6,
+                    scope=requested_scope,
+                )
+
+            backend_task += "\n\n" + _format_rag_evidence(
+                evidence,
+                attachment_only=bool(attachment_paths),
+            )
+
+            _set_job_activity(
+                job_id,
+                "RETRIEVAL",
+                f"Prepared {len(evidence)} evidence item(s) for the model.",
+                "complete",
+            )
+
+            _set_job_activity(
+                job_id,
+                "LOCAL INFERENCE",
+                "Executing the configured V.A.U.L.T. backend locally using authorized evidence.",
+                "active",
+            )
 
             result = vault.run(backend_task)
-
             if result is None:
                 result = ""
-
             result = str(result)
 
             with CHAT_JOBS_LOCK:
                 CHAT_JOBS[job_id]["status"] = "completed"
                 CHAT_JOBS[job_id]["response"] = result
 
-        except Exception as error:
-            print(
-                "[V.A.U.L.T.] Backend error:",
-                repr(error),
+            _set_job_activity(
+                job_id,
+                "RESPONSE READY",
+                "Orchestrator completed the request and returned a response.",
+                "complete",
             )
 
+        except Exception as error:
+            print("[V.A.U.L.T.] Backend error:", repr(error))
             with CHAT_JOBS_LOCK:
                 CHAT_JOBS[job_id]["status"] = "error"
                 CHAT_JOBS[job_id]["error"] = str(error)
+            _set_job_activity(job_id, "REQUEST FAILED", str(error), "error")
 
     CHAT_EXECUTOR.submit(run_job)
-
     return job_id
 
 
@@ -962,6 +1387,98 @@ body.vault-chat-active #vault-live-chat {
 }
 
 /* ==========================================================
+   INLINE ORCHESTRATION ACTIVITY
+   ========================================================== */
+
+.vault-inline-activity {
+    margin-top: 12px !important;
+    padding: 11px 0 2px 0 !important;
+    border-top: 1px solid rgba(135, 146, 154, 0.14) !important;
+    max-width: 620px !important;
+}
+
+.vault-inline-activity-label {
+    margin-bottom: 9px !important;
+    color: rgba(135, 146, 154, 0.8) !important;
+    font-family: "JetBrains Mono", monospace !important;
+    font-size: 8px !important;
+    font-weight: 600 !important;
+    letter-spacing: 0.12em !important;
+    text-transform: uppercase !important;
+}
+
+.vault-inline-activity-list {
+    display: flex !important;
+    flex-direction: column !important;
+    gap: 7px !important;
+}
+
+.vault-inline-activity-item {
+    display: grid !important;
+    grid-template-columns: 9px minmax(0, 1fr) !important;
+    gap: 8px !important;
+    align-items: start !important;
+}
+
+.vault-inline-activity-dot {
+    width: 7px !important;
+    height: 7px !important;
+    margin-top: 4px !important;
+    border: 1px solid rgba(135, 146, 154, 0.45) !important;
+    background: transparent !important;
+    box-sizing: border-box !important;
+    border-radius: 50% !important;
+}
+
+.vault-inline-activity-item.active .vault-inline-activity-dot {
+    border-color: #38bdf8 !important;
+    background: #38bdf8 !important;
+    box-shadow: 0 0 7px rgba(56, 189, 248, 0.65) !important;
+    animation: vaultActivityPulse 1.25s ease-in-out infinite !important;
+}
+
+.vault-inline-activity-item.complete .vault-inline-activity-dot {
+    border-color: #34d399 !important;
+    background: #34d399 !important;
+}
+
+.vault-inline-activity-item.error .vault-inline-activity-dot {
+    border-color: #ff6b6b !important;
+    background: #ff6b6b !important;
+}
+
+.vault-inline-activity-stage {
+    color: rgba(226, 226, 234, 0.76) !important;
+    font-family: "JetBrains Mono", monospace !important;
+    font-size: 8px !important;
+    font-weight: 600 !important;
+    letter-spacing: 0.08em !important;
+    line-height: 1.35 !important;
+    text-transform: uppercase !important;
+}
+
+.vault-inline-activity-detail {
+    margin-top: 1px !important;
+    color: rgba(226, 226, 234, 0.48) !important;
+    font-family: "Geist", sans-serif !important;
+    font-size: 10px !important;
+    line-height: 1.4 !important;
+}
+
+.vault-inline-activity-time {
+    margin-top: 1px !important;
+    color: rgba(135, 146, 154, 0.42) !important;
+    font-family: "JetBrains Mono", monospace !important;
+    font-size: 7px !important;
+    line-height: 1.3 !important;
+}
+
+@keyframes vaultActivityPulse {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.45; transform: scale(0.82); }
+}
+
+/* ==========================================================
    ATTACHMENT CHIPS
    ========================================================== */
 
@@ -1186,6 +1703,54 @@ body.vault-chat-active #vault-live-chat {
     liveShell.appendChild(composerHost);
     main.appendChild(liveShell);
 
+
+    // ======================================================
+    // INLINE ORCHESTRATION ACTIVITY
+    // ======================================================
+
+    let inlineActivityList = null;
+
+    function renderActivity(events, targetList) {
+        const list = targetList || inlineActivityList;
+        if (!list) return;
+
+        if (!events || !events.length) {
+            list.innerHTML = "";
+            return;
+        }
+
+        list.innerHTML = "";
+
+        events.forEach(function(event) {
+            const item = document.createElement("div");
+            item.className = "vault-inline-activity-item " + (event.status || "active");
+
+            const dot = document.createElement("div");
+            dot.className = "vault-inline-activity-dot";
+
+            const content = document.createElement("div");
+
+            const stage = document.createElement("div");
+            stage.className = "vault-inline-activity-stage";
+            stage.textContent = event.stage || "WORKFLOW";
+
+            const detail = document.createElement("div");
+            detail.className = "vault-inline-activity-detail";
+            detail.textContent = event.detail || "";
+
+            const time = document.createElement("div");
+            time.className = "vault-inline-activity-time";
+            time.textContent = event.timestamp || "";
+
+            content.appendChild(stage);
+            if (event.detail) content.appendChild(detail);
+            if (event.timestamp) content.appendChild(time);
+
+            item.appendChild(dot);
+            item.appendChild(content);
+            list.appendChild(item);
+        });
+    }
 
     // ======================================================
     // HELPERS
@@ -1587,11 +2152,39 @@ body.vault-chat-active #vault-live-chat {
 
     function createThinkingMessage() {
 
-        return createMessage(
+        const wrapper = createMessage(
             "V.A.U.L.T.",
             "Processing request...",
             true
         );
+
+        if (!wrapper) return wrapper;
+
+        const activity = document.createElement("div");
+        activity.className = "vault-inline-activity";
+
+        const label = document.createElement("div");
+        label.className = "vault-inline-activity-label";
+        label.textContent = "System activity";
+
+        const list = document.createElement("div");
+        list.className = "vault-inline-activity-list";
+
+        activity.appendChild(label);
+        activity.appendChild(list);
+        wrapper.appendChild(activity);
+
+        inlineActivityList = list;
+        renderActivity([
+            {
+                stage: "REQUEST RECEIVED",
+                detail: "V.A.U.L.T. accepted the operator request.",
+                status: "complete",
+                timestamp: new Date().toLocaleTimeString()
+            }
+        ], list);
+
+        return wrapper;
     }
 
 
@@ -1681,6 +2274,21 @@ body.vault-chat-active #vault-live-chat {
 
             const jobId = data.job_id;
 
+            renderActivity([
+                {
+                    stage: "REQUEST RECEIVED",
+                    detail: "V.A.U.L.T. accepted the operator request.",
+                    status: "complete",
+                    timestamp: new Date().toLocaleTimeString()
+                },
+                {
+                    stage: "REQUEST QUEUED",
+                    detail: "Request ID assigned and orchestration job queued.",
+                    status: "active",
+                    timestamp: new Date().toLocaleTimeString()
+                }
+            ], inlineActivityList);
+
             if (!jobId) {
                 throw new Error(
                     "V.A.U.L.T. did not return a request ID."
@@ -1689,7 +2297,7 @@ body.vault-chat-active #vault-live-chat {
 
             let finished = false;
             const pollingStartedAt = Date.now();
-            const MAX_POLLING_TIME = 5 * 60 * 1000;
+            const MAX_POLLING_TIME = 20 * 60 * 1000;
 
             while (!finished) {
 
@@ -1730,6 +2338,8 @@ body.vault-chat-active #vault-live-chat {
                     );
                 }
 
+                renderActivity(statusData.activity || []);
+
                 if (statusData.status === "completed") {
 
                     finished = true;
@@ -1737,6 +2347,7 @@ body.vault-chat-active #vault-live-chat {
                     if (thinking) {
                         thinking.remove();
                     }
+                    inlineActivityList = null;
 
                     createMessage(
                         "V.A.U.L.T.",
@@ -1751,6 +2362,7 @@ body.vault-chat-active #vault-live-chat {
                     if (thinking) {
                         thinking.remove();
                     }
+                    inlineActivityList = null;
 
                     throw new Error(
                         statusData.error ||
@@ -1803,6 +2415,17 @@ body.vault-chat-active #vault-live-chat {
     // ======================================================
     // ENTER TO SEND
     // ======================================================
+
+    window.addEventListener(
+        "keydown",
+        function (event) {
+
+            if (event.key === "Escape") {
+                closeActivity();
+                return;
+            }
+        }
+    );
 
     textarea.addEventListener(
         "keydown",
@@ -1906,6 +2529,401 @@ def _store_chat_attachment_in_library(user_id, safe_name, payload, mime_type):
             return concurrent.get("storage_path")
         raise ValueError(f"Unable to save '{safe_name}' to the private Library.")
     return destination_path
+
+
+def _set_library_processing_state(user_id, storage_path, status, ocr_used=0, chunk_count=0):
+    """Update processing metadata for one private Library file."""
+    if get_connection is None or not user_id or not storage_path:
+        return False
+
+    try:
+        with get_connection() as connection:
+            cursor = connection.execute(
+                """
+                UPDATE library_files
+                SET processing_status = ?,
+                    ocr_used = ?,
+                    chunk_count = ?
+                WHERE user_id = ? AND storage_path = ?
+                """,
+                (
+                    str(status),
+                    1 if ocr_used else 0,
+                    int(chunk_count or 0),
+                    int(user_id),
+                    str(storage_path),
+                ),
+            )
+            connection.commit()
+            return cursor.rowcount > 0
+    except Exception as error:
+        print("[V.A.U.L.T.] Library processing metadata update failed:", repr(error))
+        return False
+
+
+def _get_library_record_by_storage_path(user_id, storage_path):
+    """Return the authenticated user's Library record for a stored path."""
+    if get_connection is None or not user_id or not storage_path:
+        return None
+
+    try:
+        with get_connection() as connection:
+            row = connection.execute(
+                """
+                SELECT *
+                FROM library_files
+                WHERE user_id = ? AND storage_path = ?
+                LIMIT 1
+                """,
+                (int(user_id), str(storage_path)),
+            ).fetchone()
+
+            if row is None:
+                return None
+
+            if hasattr(row, "keys"):
+                return dict(row)
+
+            columns = [column[0] for column in connection.execute(
+                "PRAGMA table_info(library_files)"
+            ).fetchall()]
+            return dict(zip(columns, row))
+    except Exception as error:
+        print("[V.A.U.L.T.] Could not read Library processing state:", repr(error))
+        return None
+
+
+def _process_private_attachment(user_id, storage_path):
+    """Extract/OCR, chunk, embed, and scope-index one private attachment.
+
+    A previously completed upload is reused instead of being parsed and
+    embedded again. This is important for large PPTX/PDF/image files: a
+    browser timeout must not cause the same already-indexed file to be
+    reprocessed on the next message.
+    """
+    existing = _get_library_record_by_storage_path(user_id, storage_path)
+
+    if existing:
+        existing_status = str(existing.get("processing_status", "")).lower()
+        existing_chunks = int(existing.get("chunk_count") or 0)
+
+        if (
+            existing_status == "processed"
+            and existing_chunks > 0
+            and Path(storage_path).exists()
+        ):
+            return {
+                "file": existing.get("original_name") or Path(storage_path).name,
+                "path": str(storage_path),
+                "extension": existing.get("file_extension") or Path(storage_path).suffix.lower(),
+                "mime_type": existing.get("mime_type"),
+                "documents": 0,
+                "pages": [],
+                "chunks": existing_chunks,
+                "stored_chunks": existing_chunks,
+                "ocr_used": bool(existing.get("ocr_used")),
+                "status": "processed",
+                "cached": True,
+            }
+
+    _set_library_processing_state(
+        user_id,
+        storage_path,
+        "processing",
+        ocr_used=0,
+        chunk_count=0,
+    )
+
+    try:
+        result = process_document(
+            Path(storage_path),
+            store=True,
+            scope="user",
+            user_id=int(user_id),
+        )
+    except Exception:
+        _set_library_processing_state(
+            user_id,
+            storage_path,
+            "failed",
+            ocr_used=0,
+            chunk_count=0,
+        )
+        raise
+
+    _set_library_processing_state(
+        user_id,
+        storage_path,
+        "processed",
+        ocr_used=result.get("ocr_used", False),
+        chunk_count=result.get("stored_chunks", result.get("chunks", 0)),
+    )
+
+    return result
+
+
+def _get_private_source_names(user_id, storage_path):
+    """Return both the stored filename and original Library filename for one attachment."""
+    names = []
+
+    stored_name = Path(storage_path).name if storage_path else ""
+    if stored_name:
+        names.append(stored_name)
+
+    if get_connection is not None and user_id and storage_path:
+        try:
+            with get_connection() as connection:
+                row = connection.execute(
+                    """
+                    SELECT original_name
+                    FROM library_files
+                    WHERE user_id = ? AND storage_path = ?
+                    LIMIT 1
+                    """,
+                    (int(user_id), str(storage_path)),
+                ).fetchone()
+                if row:
+                    original_name = row[0] if not hasattr(row, "keys") else row["original_name"]
+                    if original_name and str(original_name) not in names:
+                        names.append(str(original_name))
+        except Exception as error:
+            print("[V.A.U.L.T.] Could not resolve original attachment name:", repr(error))
+
+    return names
+
+
+def _retrieve_attached_file_evidence(user_id, query, attachment_paths, top_k=12):
+    """Retrieve evidence ONLY from the files attached to the current request."""
+    if not attachment_paths:
+        return []
+
+    # Prefer the vector store's native metadata filter. This is the important
+    # distinction between ordinary RAG and file-grounded analysis.
+    if KNOWLEDGE_COLLECTION is not None and embed_query is not None:
+        source_names = []
+        for path in attachment_paths:
+            for name in _get_private_source_names(user_id, path):
+                if name not in source_names:
+                    source_names.append(name)
+
+        if source_names:
+            try:
+                query_embedding = embed_query(query or "Explain the attached file")
+                count = KNOWLEDGE_COLLECTION.count()
+                if count:
+                    n_results = max(1, min(int(top_k), count))
+                    source_filters = [
+                        {
+                            "$and": [
+                                {"scope": "user"},
+                                {"user_id": str(int(user_id))},
+                                {"source": name},
+                            ]
+                        }
+                        for name in source_names
+                    ]
+
+                    where_filter = (
+                        source_filters[0]
+                        if len(source_filters) == 1
+                        else {"$or": source_filters}
+                    )
+
+                    raw = KNOWLEDGE_COLLECTION.query(
+                        query_embeddings=[query_embedding],
+                        n_results=n_results,
+                        where=where_filter,
+                        include=["documents", "metadatas", "distances"],
+                    )
+
+                    documents = raw.get("documents", [[]])[0] or []
+                    metadatas = raw.get("metadatas", [[]])[0] or []
+                    distances = raw.get("distances", [[]])[0] or []
+
+                    results = []
+                    for index, text in enumerate(documents):
+                        metadata = metadatas[index] if index < len(metadatas) else {}
+                        distance = distances[index] if index < len(distances) else None
+                        results.append(
+                            {
+                                "text": text,
+                                "source": metadata.get("source", "unknown"),
+                                "page": metadata.get("page"),
+                                "distance": distance,
+                                "scope": metadata.get("scope", "user"),
+                                "user_id": metadata.get("user_id", str(user_id)),
+                                "ocr_used": metadata.get("ocr_used", False),
+                                "content_type": metadata.get("content_type", ""),
+                            }
+                        )
+
+                    if results:
+                        return results
+            except Exception as error:
+                print("[V.A.U.L.T.] Attachment-scoped vector retrieval failed:", repr(error))
+
+    # Compatibility fallback: use normal authorized search, but only retain
+    # chunks whose source exactly matches an attached file. This still prevents
+    # unrelated documents from reaching the model.
+    allowed_sources = set()
+    for path in attachment_paths:
+        allowed_sources.update(_get_private_source_names(user_id, path))
+
+    try:
+        broad_results = search_knowledge(
+            query=query or "Explain the attached file",
+            top_k=max(20, int(top_k)),
+            user_id=int(user_id),
+        )
+    except TypeError:
+        broad_results = search_knowledge(
+            query=query or "Explain the attached file",
+            top_k=max(20, int(top_k)),
+        )
+
+    return [
+        item
+        for item in broad_results
+        if str(item.get("source", "")) in allowed_sources
+        and str(item.get("scope", "user")) == "user"
+        and str(item.get("user_id", user_id)) == str(user_id)
+    ][:top_k]
+
+
+def _infer_knowledge_scope(query):
+    """Infer an explicit knowledge scope from the operator's wording.
+
+    Returns ``"global"`` for shared/company KB requests, ``"user"`` for
+    private/local Library requests, and ``None`` when the operator did not
+    specify a scope.  Unqualified requests remain authorized across both
+    scopes.
+    """
+    text = re.sub(r"\s+", " ", str(query or "")).strip().lower()
+
+    private_markers = (
+        "my library", "my files", "my documents", "private library",
+        "private files", "private documents", "local library", "local files",
+        "personal library", "personal files", "uploaded by me", "my uploaded",
+    )
+    global_markers = (
+        "global knowledge", "global kb", "knowledge base", "company knowledge",
+        "company kb", "shared knowledge", "shared kb", "organization knowledge",
+        "organization kb", "corporate knowledge", "corporate kb", "all users",
+    )
+
+    if any(marker in text for marker in private_markers):
+        return "user"
+    if any(marker in text for marker in global_markers):
+        return "global"
+    return None
+
+
+def _retrieve_authorized_evidence(user_id, query, top_k=4, scope=None):
+    """Retrieve evidence from the correct authorized scope(s).
+
+    Explicit scope requests are filtered after a broader authorized search so
+    private and global sources can never be mixed into a scope-specific answer.
+    Unqualified questions may use both Global KB and the authenticated user's
+    private Library.
+    """
+    requested_scope = scope or _infer_knowledge_scope(query)
+    search_top_k = max(int(top_k), 20) if requested_scope else int(top_k)
+
+    try:
+        results = search_knowledge(
+            query=query,
+            top_k=search_top_k,
+            user_id=int(user_id),
+        )
+    except TypeError:
+        results = search_knowledge(query=query, top_k=search_top_k)
+
+    if not requested_scope:
+        return results[:int(top_k)]
+
+    filtered = []
+    for item in results:
+        item_scope = str(item.get("scope", "")).lower()
+        if item_scope != requested_scope:
+            continue
+        if requested_scope == "user" and str(item.get("user_id", "")) != str(user_id):
+            continue
+        if requested_scope == "global" and item_scope != "global":
+            continue
+        filtered.append(item)
+
+    return filtered[:int(top_k)]
+
+
+def _format_rag_evidence(results, attachment_only=False):
+    """Format scoped retrieval results as explicit evidence for the orchestrator."""
+    if not results:
+        if attachment_only:
+            return (
+                "ATTACHED-FILE EVIDENCE: No readable/indexed evidence was "
+                "retrieved from the attached file(s). Do not use unrelated "
+                "Global KB or private Library documents to answer this request. "
+                "If the file content cannot be established, say so explicitly."
+            )
+        return (
+            "AUTHORIZED V.A.U.L.T. KNOWLEDGE SEARCH RESULT: "
+            "No sufficiently relevant evidence was retrieved from the "
+            "authorized Global Knowledge Base or this user's private Library."
+        )
+
+    lines = [
+        (
+            "ATTACHED-FILE V.A.U.L.T. EVIDENCE:"
+            if attachment_only
+            else
+            "AUTHORIZED V.A.U.L.T. KNOWLEDGE EVIDENCE:"
+        ),
+        (
+            "These excerpts come ONLY from the file(s) attached to the current "
+            "request. Ignore every other Global KB or Library source, even if "
+            "it appears semantically related. Answer the user's request using "
+            "the attached file content only; if the file does not contain the "
+            "requested information, say that it is not present."
+            if attachment_only
+            else
+            "The following excerpts were retrieved from the selected authorized scope. "
+            "Never merge Global KB and private Library facts when the request names a specific scope. "
+            "The following excerpts were retrieved from sources the authenticated "
+            "operator is authorized to access. Use them as evidence; do not invent "
+            "internal facts that are not supported here."
+        ),
+    ]
+
+    for index, item in enumerate(results, start=1):
+        source = item.get("source", "unknown")
+        page = item.get("page")
+        scope = item.get("scope", "unknown")
+        owner = item.get("user_id", "")
+        location = source if page is None else f"{source}, page {page}"
+        access_label = "GLOBAL" if scope == "global" else "PRIVATE USER LIBRARY"
+
+        lines.append(
+            f"[Evidence {index}] {access_label} | {location} | "
+            f"distance={item.get('distance', 'n/a')}"
+        )
+        if scope == "user":
+            lines.append(f"Authorized owner: user {owner}")
+        lines.append(str(item.get("text", "")).strip())
+
+    lines.append(
+        (
+            "Evidence rule: the attached file is the sole source of truth for "
+            "this request. Do not import facts, values, names, policies, or "
+            "examples from any other V.A.U.L.T. document. If the attached file "
+            "does not support a claim, state that clearly."
+            if attachment_only
+            else
+            "Evidence rule: distinguish retrieved internal facts from general "
+            "knowledge. If an internal claim is not supported by the retrieved "
+            "evidence, do not present it as a V.A.U.L.T. fact."
+        )
+    )
+    return "\n".join(lines)
 
 
 def save_uploaded_files(handler, content_length, user_id):
@@ -2631,7 +3649,69 @@ class VaultHandler(BaseHTTPRequestHandler):
                 existing = get_knowledge_file_by_name(original_name)
                 old_path = existing.get("storage_path") if existing else None
                 if existing and existing.get("content_hash") == content_hash and Path(existing.get("storage_path", "")).exists():
-                    results.append({"id": existing["id"], "name": original_name, "action": "unchanged"})
+                    if (
+                        str(existing.get("processing_status", "")).lower() == "processed"
+                        and int(existing.get("chunk_count") or 0) > 0
+                    ):
+                        results.append({
+                            "id": existing["id"],
+                            "name": original_name,
+                            "action": "unchanged",
+                            "processing_status": "processed",
+                            "ocr_used": bool(existing.get("ocr_used")),
+                            "chunk_count": int(existing.get("chunk_count") or 0),
+                        })
+                        continue
+
+                    # Existing bytes are present, but ingestion was incomplete.
+                    file_id = existing["id"]
+                    target = Path(existing["storage_path"])
+                    try:
+                        processing_result = process_document(
+                            target,
+                            store=True,
+                            scope="global",
+                            user_id=None,
+                            source_name=original_name,
+                        )
+                        update_knowledge_file(
+                            file_id,
+                            processing_status="processed",
+                            ocr_used=1 if processing_result.get("ocr_used") else 0,
+                            chunk_count=int(
+                                processing_result.get(
+                                    "stored_chunks",
+                                    processing_result.get("chunks", 0),
+                                )
+                            ),
+                        )
+                        results.append({
+                            "id": file_id,
+                            "name": original_name,
+                            "action": "processed",
+                            "processing_status": "processed",
+                            "ocr_used": bool(processing_result.get("ocr_used")),
+                            "chunk_count": int(
+                                processing_result.get(
+                                    "stored_chunks",
+                                    processing_result.get("chunks", 0),
+                                )
+                            ),
+                        })
+                    except Exception as processing_error:
+                        update_knowledge_file(
+                            file_id,
+                            processing_status="failed",
+                            ocr_used=0,
+                            chunk_count=0,
+                        )
+                        results.append({
+                            "id": file_id,
+                            "name": original_name,
+                            "action": "processed",
+                            "processing_status": "failed",
+                            "error": str(processing_error),
+                        })
                     continue
                 stored_name = f"{uuid.uuid4().hex}{Path(original_name).suffix}"
                 target = KNOWLEDGE_DIR / stored_name
@@ -2655,7 +3735,57 @@ class VaultHandler(BaseHTTPRequestHandler):
                         Path(old_path).unlink(missing_ok=True)
                     except OSError:
                         pass
-                results.append({"id": file_id, "name": original_name, "action": action})
+
+                # Immediately ingest the shared Global Knowledge Base resource.
+                try:
+                    processing_result = process_document(
+                        target,
+                        store=True,
+                        scope="global",
+                        user_id=None,
+                        source_name=original_name,
+                    )
+
+                    update_knowledge_file(
+                        file_id,
+                        processing_status="processed",
+                        ocr_used=1 if processing_result.get("ocr_used") else 0,
+                        chunk_count=int(
+                            processing_result.get(
+                                "stored_chunks",
+                                processing_result.get("chunks", 0),
+                            )
+                        ),
+                    )
+
+                    results.append({
+                        "id": file_id,
+                        "name": original_name,
+                        "action": action,
+                        "processing_status": "processed",
+                        "ocr_used": bool(processing_result.get("ocr_used")),
+                        "chunk_count": int(
+                            processing_result.get(
+                                "stored_chunks",
+                                processing_result.get("chunks", 0),
+                            )
+                        ),
+                    })
+                except Exception as processing_error:
+                    update_knowledge_file(
+                        file_id,
+                        processing_status="failed",
+                        ocr_used=0,
+                        chunk_count=0,
+                    )
+                    results.append({
+                        "id": file_id,
+                        "name": original_name,
+                        "action": action,
+                        "processing_status": "failed",
+                        "error": str(processing_error),
+                    })
+
             rows = get_knowledge_files()
             resources = []
             for row in rows:
@@ -2994,6 +4124,7 @@ class VaultHandler(BaseHTTPRequestHandler):
                     "success": True,
                     "status": "completed",
                     "response": job["response"] or "",
+                    "activity": job.get("activity", []),
                 }
             )
 
@@ -3009,6 +4140,7 @@ class VaultHandler(BaseHTTPRequestHandler):
                     "error":
                         job["error"] or
                         "Unknown V.A.U.L.T. backend error.",
+                    "activity": job.get("activity", []),
                 },
                 status=500,
             )
@@ -3020,6 +4152,7 @@ class VaultHandler(BaseHTTPRequestHandler):
             {
                 "success": True,
                 "status": status,
+                "activity": job.get("activity", []),
             }
         )
 
@@ -3121,6 +4254,10 @@ def main():
 
     print(
         "  /security  -> Security"
+    )
+
+    print(
+        "  /knowledge -> Global Knowledge Base"
     )
 
     print()

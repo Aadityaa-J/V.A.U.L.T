@@ -22,6 +22,8 @@ from tools.documents import (
     get_document_summary,
 )
 
+from knowledge.search import search_knowledge
+
 
 # ==========================================================
 # CALCULATION TOOL
@@ -248,7 +250,6 @@ class ReadDocumentTool(BaseTool):
         # ------------------------------------------------------
 
         if cleaned.startswith("{"):
-
             try:
                 data = json.loads(cleaned)
 
@@ -300,7 +301,6 @@ class DocumentInfoTool(BaseTool):
         cleaned = arguments.strip()
 
         if cleaned.startswith("{"):
-
             try:
                 data = json.loads(cleaned)
 
@@ -428,6 +428,94 @@ class DocumentSummaryTool(BaseTool):
         return get_document_summary(
             file_path=file_path,
             max_words=max_words,
+        )
+
+
+# ==========================================================
+# KNOWLEDGE BASE / RAG TOOL
+# ==========================================================
+
+class SearchKnowledgeTool(BaseTool):
+    name = "search_knowledge"
+
+    description = (
+        "Search the V.A.U.L.T. knowledge base using semantic retrieval. "
+        "Use this tool for organization-specific, internal, or knowledge-base "
+        "questions. Arguments must be JSON containing 'query' and optionally "
+        "'top_k' and 'distance_threshold'. Results include the retrieved "
+        "text, source document, page, and retrieval distance."
+    )
+
+    def execute(self, arguments: Any) -> Any:
+        if not isinstance(arguments, str):
+            raise TypeError(
+                "Knowledge search arguments must be a JSON string."
+            )
+
+        try:
+            data = json.loads(arguments)
+
+        except json.JSONDecodeError as exc:
+            raise ValueError(
+                "Invalid JSON knowledge search arguments."
+            ) from exc
+
+        if not isinstance(data, dict):
+            raise ValueError(
+                "Knowledge search arguments must be a JSON object."
+            )
+
+        query = data.get(
+            "query",
+            ""
+        )
+
+        top_k = data.get(
+            "top_k",
+            4
+        )
+
+        distance_threshold = data.get(
+            "distance_threshold",
+            1.3
+        )
+
+        if not isinstance(query, str):
+            raise TypeError(
+                "'query' must be a string."
+            )
+
+        query = query.strip()
+
+        if not query:
+            raise ValueError(
+                "'query' cannot be empty."
+            )
+
+        if not isinstance(top_k, int):
+            raise TypeError(
+                "'top_k' must be an integer."
+            )
+
+        if not isinstance(distance_threshold, (int, float)):
+            raise TypeError(
+                "'distance_threshold' must be a number."
+            )
+
+        if top_k < 1:
+            raise ValueError(
+                "'top_k' must be at least 1."
+            )
+
+        if distance_threshold <= 0:
+            raise ValueError(
+                "'distance_threshold' must be greater than 0."
+            )
+
+        return search_knowledge(
+            query=query,
+            top_k=top_k,
+            distance_threshold=distance_threshold,
         )
 
 
