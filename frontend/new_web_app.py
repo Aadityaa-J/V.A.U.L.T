@@ -5,30 +5,31 @@ import sys
 import re
 import json
 import html as html_module
-import hashlib
-import mimetypes
 import threading
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 from email.parser import BytesParser
 from email.policy import default
-from http.cookies import SimpleCookie
 
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
+# Resolve the V.A.U.L.T. project root robustly.
+# web_app.py may live in the project root or a frontend subdirectory.
+_THIS_FILE = Path(__file__).resolve()
+_PROJECT_CANDIDATES = [_THIS_FILE.parent, *_THIS_FILE.parents]
+
+PROJECT_ROOT = next(
+    (
+        candidate
+        for candidate in _PROJECT_CANDIDATES
+        if (candidate / "agents").is_dir()
+        and (candidate / "tools").is_dir()
+    ),
+    _THIS_FILE.parent,
+)
+
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from agents.orchestrator import Orchestrator
-from auth import create_session, get_session, destroy_session
-from database import (
-    authenticate_user,
-    add_library_file,
-    get_library_files,
-    get_library_file,
-    get_library_file_by_name,
-    update_library_file,
-    delete_library_file,
-)
 
 
 # ============================================================
@@ -81,7 +82,7 @@ FAST_GREETING_RESPONSES = {
 }
 
 
-def start_chat_job(message, attachment_paths=None, user_id=None):
+def start_chat_job(message, attachment_paths=None):
     """Run the existing Orchestrator asynchronously with local file references."""
 
     attachment_paths = attachment_paths or []
@@ -92,7 +93,6 @@ def start_chat_job(message, attachment_paths=None, user_id=None):
             "status": "queued",
             "response": None,
             "error": None,
-            "user_id": user_id,
         }
 
     # --------------------------------------------------------
@@ -134,11 +134,13 @@ def start_chat_job(message, attachment_paths=None, user_id=None):
 
             if attachment_paths:
                 attachment_lines = [
-                    "\n\nThe user attached the following local file(s). "
-                    "Treat them as references for this request. "
-                    "Use the available document tools (read_document, "
-                    "document_info, search_document, document_summary) "
-                    "when you need their contents. Do not invent file contents.",
+                    "\n\nATTACHED FILES (LOCAL V.A.U.L.T. REFERENCES):",
+                    "The user attached one or more files for this request.",
+                    "If the user asks what a file contains, says, or means, "
+                    "you MUST read the relevant file contents before giving "
+                    "the final answer. Do not stop after file_exists.",
+                    "Use read_document for supported text/document files. "
+                    "Use document_info only for metadata. Do not invent file contents.",
                 ]
 
                 for path in attachment_paths:
@@ -296,6 +298,18 @@ def route_from_text(text):
 def patch_navigation(html, current_page):
 
     # ========================================================
+    # LOGIN FORM
+    # ========================================================
+
+    html = re.sub(
+        r'onsubmit\s*=\s*["\']\s*event\.preventDefault\(\)\s*;?\s*["\']',
+        'onsubmit="window.location.href=\'/anchor\'; return false;"',
+        html,
+        flags=re.IGNORECASE,
+    )
+
+
+    # ========================================================
     # DIRECT href="#" LINK PATCHING
     # ========================================================
 
@@ -408,6 +422,23 @@ def patch_navigation(html, current_page):
 
 
             // =================================================
+            // LOGIN -> ANCHOR
+            // =================================================
+
+            if (
+                text.includes("enter v.a.u.l.t")
+            ) {
+
+                event.preventDefault();
+                event.stopPropagation();
+
+                window.location.href = "/anchor";
+
+                return;
+            }
+
+
+            // =================================================
             // ANALYSIS
             // =================================================
 
@@ -429,9 +460,8 @@ def patch_navigation(html, current_page):
             // =================================================
 
             if (
-                (text.includes("files") ||
-                 text.includes("library")) &&
-                !text.includes("add to library")
+                text.includes("files") ||
+                text.includes("library")
             ) {
 
                 event.preventDefault();
@@ -564,273 +594,6 @@ def patch_navigation(html, current_page):
 
         html += navigation_script
 
-
-    return html
-
-
-# ============================================================
-# PATCH LIBRARY PAGE
-#
-# The original Library.html is kept as the visual shell. The dummy
-# resource cards are replaced at runtime with the authenticated
-# user's actual Library records.
-# ============================================================
-
-def patch_library_page(html):
-    """Turn the static Library design into the authenticated user's Library."""
-
-    grid_start = '<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4" id="resourceGrid">'
-    grid_pos = html.find(grid_start)
-
-    if grid_pos >= 0:
-        grid_end = html.find('</div>\n</div>\n</main>', grid_pos)
-        if grid_end >= 0:
-            grid_end += len('</div>')
-            html = (
-                html[:grid_pos]
-                + grid_start + '</div>'
-                + html[grid_end:]
-            )
-
-    library_script = r"""
-<style>
-    .library-empty-state {
-        grid-column: 1 / -1;
-        min-height: 220px;
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        justify-content: center;
-        text-align: center;
-        border: 1px dashed rgba(135, 146, 154, 0.35);
-        background: rgba(25, 28, 33, 0.45);
-    }
-    .library-error-state {
-        grid-column: 1 / -1;
-        padding: 18px;
-        border: 1px solid rgba(255, 80, 80, 0.3);
-        color: #ff6b6b;
-        background: rgba(90, 0, 0, 0.12);
-        font-family: "JetBrains Mono", monospace;
-        font-size: 12px;
-    }
-    .library-upload-status {
-        min-height: 16px;
-        margin-top: 8px;
-        font-family: "JetBrains Mono", monospace;
-        font-size: 10px;
-        letter-spacing: 0.06em;
-        color: #8ed5ff;
-        text-transform: uppercase;
-    }
-    .library-inspector {
-        position: fixed;
-        top: 0;
-        right: 0;
-        bottom: 0;
-        width: min(440px, 92vw);
-        z-index: 60;
-        transform: translateX(100%);
-        transition: transform 240ms ease;
-        background: #111319;
-        border-left: 1px solid rgba(135, 146, 154, 0.3);
-        box-shadow: -20px 0 50px rgba(0,0,0,0.35);
-        overflow-y: auto;
-    }
-    .library-inspector.open { transform: translateX(0); }
-    .library-inspector-inner { padding: 28px; padding-top: 64px; }
-    .library-inspector-label {
-        font-family: "JetBrains Mono", monospace;
-        font-size: 10px;
-        letter-spacing: 0.12em;
-        text-transform: uppercase;
-        color: #87929a;
-    }
-    .library-inspector-value {
-        font-family: "Geist", sans-serif;
-        color: #e2e2ea;
-        word-break: break-word;
-    }
-</style>
-
-<div id="libraryInspectorBackdrop" class="fixed inset-0 bg-black/40 backdrop-blur-[2px] z-50 opacity-0 pointer-events-none transition-opacity duration-200"></div>
-
-<aside id="libraryInspector" class="library-inspector">
-    <div class="library-inspector-inner">
-        <div class="flex items-center justify-between mb-7">
-            <div>
-                <div class="library-inspector-label mb-1">USER LIBRARY / RESOURCE</div>
-                <h2 id="libraryInspectorTitle" class="text-xl font-medium text-on-surface">Resource</h2>
-            </div>
-            <button id="libraryInspectorClose" class="w-8 h-8 border border-outline-variant/30 text-outline hover:text-on-surface hover:bg-surface-container-high/50 rounded flex items-center justify-center">
-                <span class="material-symbols-outlined text-[18px]">close</span>
-            </button>
-        </div>
-        <div class="space-y-5">
-            <div><div class="library-inspector-label">TYPE</div><div id="libraryInspectorType" class="library-inspector-value mt-1">—</div></div>
-            <div><div class="library-inspector-label">SIZE</div><div id="libraryInspectorSize" class="library-inspector-value mt-1">—</div></div>
-            <div><div class="library-inspector-label">UPLOADED</div><div id="libraryInspectorDate" class="library-inspector-value mt-1">—</div></div>
-            <div><div class="library-inspector-label">PROCESSING</div><div id="libraryInspectorStatus" class="library-inspector-value mt-1 text-primary">STORED LOCALLY</div></div>
-            <div><div class="library-inspector-label">CONTENT HASH</div><div id="libraryInspectorHash" class="library-inspector-value mt-1 text-xs font-mono break-all">—</div></div>
-            <div class="pt-4 border-t border-outline-variant/20">
-                <div class="library-inspector-label">RAG STATUS</div>
-                <div id="libraryInspectorRag" class="library-inspector-value mt-1">Awaiting document processing</div>
-            </div>
-        </div>
-    </div>
-</aside>
-
-<script>
-(function () {
-    const grid = document.getElementById("resourceGrid");
-    const addButton = Array.from(document.querySelectorAll("button")).find(
-        button => (button.textContent || "").toLowerCase().includes("add to library")
-    );
-    if (addButton) {
-        addButton.style.display = "none";
-        addButton.setAttribute("aria-hidden", "true");
-    }
-    const searchInput = document.querySelector('input[placeholder="Search your library..."]');
-    const inspector = document.getElementById("libraryInspector");
-    const inspectorBackdrop = document.getElementById("libraryInspectorBackdrop");
-    const inspectorClose = document.getElementById("libraryInspectorClose");
-    let libraryFiles = [];
-
-    function formatBytes(bytes) {
-        if (!Number.isFinite(bytes) || bytes < 0) return "—";
-        if (bytes < 1024) return bytes + " B";
-        const units = ["KB", "MB", "GB"];
-        let value = bytes / 1024;
-        let unit = 0;
-        while (value >= 1024 && unit < units.length - 1) { value /= 1024; unit += 1; }
-        return value.toFixed(value >= 10 ? 1 : 2) + " " + units[unit];
-    }
-
-    function formatDate(value) {
-        if (!value) return "—";
-        const date = new Date(value);
-        if (Number.isNaN(date.getTime())) return value;
-        return date.toLocaleString();
-    }
-
-    function extensionOf(file) {
-        const ext = (file.file_extension || "").replace(/^\./, "").toUpperCase();
-        return ext || "FILE";
-    }
-
-    function iconFor(file) {
-        const ext = extensionOf(file);
-        if (["PNG", "JPG", "JPEG", "WEBP", "BMP", "TIFF", "GIF"].includes(ext)) return "image";
-        if (ext === "PDF") return "description";
-        if (["CSV", "XLS", "XLSX"].includes(ext)) return "table_chart";
-        if (["PY", "JS", "TS", "JAVA", "CPP", "C", "HTML", "CSS"].includes(ext)) return "terminal";
-        if (["DOC", "DOCX", "TXT", "MD"].includes(ext)) return "draft";
-        return "insert_drive_file";
-    }
-
-    function filteredFiles() {
-        const query = (searchInput ? searchInput.value : "").trim().toLowerCase();
-        if (!query) return libraryFiles;
-        return libraryFiles.filter(file =>
-            (file.original_name || "").toLowerCase().includes(query) ||
-            (file.file_extension || "").toLowerCase().includes(query) ||
-            (file.mime_type || "").toLowerCase().includes(query)
-        );
-    }
-
-    function render() {
-        if (!grid) return;
-        grid.innerHTML = "";
-        const files = filteredFiles();
-
-        if (!files.length) {
-            const empty = document.createElement("div");
-            empty.className = "library-empty-state p-8 rounded";
-            empty.innerHTML = '<span class="material-symbols-outlined text-[32px] text-outline mb-3">folder_open</span>' +
-                '<div class="font-label-telemetry text-label-telemetry text-outline uppercase tracking-widest">No user files yet</div>' +
-                '<div class="text-on-surface-variant text-body-sm mt-2">Files you attach to V.A.U.L.T. requests appear here automatically.</div>';
-            grid.appendChild(empty);
-            return;
-        }
-
-        files.forEach(file => {
-            const card = document.createElement("div");
-            const ext = extensionOf(file);
-            const status = (file.processing_status || "stored").toUpperCase();
-            card.className = "resource-card bg-surface-container-low/75 border border-outline-variant/30 hover:border-primary/50 hover:bg-surface-container/60 p-4 rounded transition-all duration-200 cursor-pointer flex flex-col justify-between relative group";
-            card.innerHTML = `
-                <div>
-                    <div class="flex items-center justify-between mb-3">
-                        <span class="p-1.5 rounded bg-surface-container border border-outline-variant/40 text-primary flex items-center justify-center"><span class="material-symbols-outlined text-[18px]">${iconFor(file)}</span></span>
-                        <span class="font-label-telemetry text-label-micro text-outline px-1.5 py-0.5 rounded bg-surface-container-lowest border border-outline-variant/20 uppercase">${ext}</span>
-                    </div>
-                    <h3 class="card-title font-headline-sm text-[15px] leading-tight font-medium text-on-surface group-hover:text-primary transition-colors break-words"></h3>
-                    <p class="text-on-surface-variant text-body-sm mt-1">${formatBytes(file.file_size)} • ${status}</p>
-                </div>
-                <div class="mt-4 pt-3 border-t border-outline-variant/20 flex items-center justify-between font-label-telemetry text-label-micro gap-2">
-                    <span class="text-outline truncate">${formatDate(file.uploaded_at)}</span>
-                    <span class="text-emerald-400 flex items-center gap-1 whitespace-nowrap">● Local</span>
-                </div>`;
-            card.querySelector(".card-title").textContent = file.original_name || "Unnamed file";
-            card.addEventListener("click", () => openInspector(file));
-            grid.appendChild(card);
-        });
-    }
-
-    function openInspector(file) {
-        document.getElementById("libraryInspectorTitle").textContent = file.original_name || "Resource";
-        document.getElementById("libraryInspectorType").textContent = file.mime_type || extensionOf(file);
-        document.getElementById("libraryInspectorSize").textContent = formatBytes(file.file_size);
-        document.getElementById("libraryInspectorDate").textContent = formatDate(file.uploaded_at);
-        document.getElementById("libraryInspectorStatus").textContent = (file.processing_status || "stored").toUpperCase();
-        document.getElementById("libraryInspectorHash").textContent = file.content_hash || "—";
-        document.getElementById("libraryInspectorRag").textContent = file.chunk_count > 0
-            ? `Indexed with ${file.chunk_count} chunks`
-            : "Awaiting document processing";
-        inspector.classList.add("open");
-        inspectorBackdrop.classList.remove("opacity-0", "pointer-events-none");
-        inspectorBackdrop.classList.add("opacity-100", "pointer-events-auto");
-    }
-
-    function closeInspector() {
-        inspector.classList.remove("open");
-        inspectorBackdrop.classList.remove("opacity-100", "pointer-events-auto");
-        inspectorBackdrop.classList.add("opacity-0", "pointer-events-none");
-    }
-
-    async function loadLibrary() {
-        if (!grid) return;
-        try {
-            const response = await fetch("/api/library", { cache: "no-store" });
-            const data = await response.json();
-            if (!response.ok || !data.success) throw new Error(data.error || "Unable to load Library.");
-            libraryFiles = Array.isArray(data.files) ? data.files : [];
-            render();
-        } catch (error) {
-            grid.innerHTML = "";
-            const errorBox = document.createElement("div");
-            errorBox.className = "library-error-state rounded";
-            errorBox.textContent = "LIBRARY ERROR // " + (error.message || "Unable to load files.");
-            grid.appendChild(errorBox);
-        }
-    }
-
-
-    if (searchInput) searchInput.addEventListener("input", render);
-    if (inspectorClose) inspectorClose.addEventListener("click", closeInspector);
-    if (inspectorBackdrop) inspectorBackdrop.addEventListener("click", closeInspector);
-    window.addEventListener("keydown", event => { if (event.key === "Escape") closeInspector(); });
-
-    loadLibrary();
-})();
-</script>
-"""
-
-    if "libraryInspector" not in html:
-        if "</body>" in html:
-            html = html.replace("</body>", library_script + "\n</body>")
-        else:
-            html += library_script
 
     return html
 
@@ -1686,23 +1449,37 @@ body.vault-chat-active #vault-live-chat {
                     setTimeout(resolve, 500);
                 });
 
-                const statusResponse = await fetch(
-                    "/api/chat/status/" +
-                    encodeURIComponent(jobId),
-                    {
-                        method: "GET",
-                        cache: "no-store"
-                    }
-                );
-
+                let statusResponse;
                 let statusData;
+                let statusAttempts = 0;
 
-                try {
-                    statusData = await statusResponse.json();
-                } catch (error) {
-                    throw new Error(
-                        "Invalid status response from V.A.U.L.T."
-                    );
+                while (statusAttempts < 3) {
+                    statusAttempts += 1;
+
+                    try {
+                        statusResponse = await fetch(
+                            "/api/chat/status/" +
+                            encodeURIComponent(jobId),
+                            {
+                                method: "GET",
+                                cache: "no-store"
+                            }
+                        );
+
+                        statusData = await statusResponse.json();
+                        break;
+
+                    } catch (error) {
+                        if (statusAttempts >= 3) {
+                            throw new Error(
+                                "Unable to reach the V.A.U.L.T. backend while checking this request."
+                            );
+                        }
+
+                        await new Promise(function (resolve) {
+                            setTimeout(resolve, 1000);
+                        });
+                    }
                 }
 
                 if (!statusResponse.ok || !statusData.success) {
@@ -1827,167 +1604,62 @@ body.vault-chat-active #vault-live-chat {
 # UPLOAD PARSING
 # ============================================================
 
-def _store_chat_attachment_in_library(user_id, safe_name, payload, mime_type):
-    """Store a chat attachment in the authenticated user's Library.
+def save_uploaded_files(handler, content_length):
+    """Parse a multipart/form-data request and save attachments locally."""
 
-    De-duplication is based on filename only. Identical content with different
-    filenames remains as separate Library records; changed content under an
-    existing filename replaces that filename's current record.
-    """
-    if not user_id:
-        raise ValueError("Authenticated user is required for file uploads.")
-
-    content_hash = hashlib.sha256(payload).hexdigest()
-    file_extension = Path(safe_name).suffix.lower()
-    existing = get_library_file_by_name(user_id, safe_name)
-
-    if existing and existing.get("content_hash") == content_hash:
-        existing_path = existing.get("storage_path")
-        if existing_path and Path(existing_path).exists():
-            return existing_path
-
-    user_library_dir = UPLOAD_DIR / "library" / f"user_{int(user_id)}"
-    user_library_dir.mkdir(parents=True, exist_ok=True)
-    stored_name = f"{uuid.uuid4().hex}_{safe_name}"
-    destination = user_library_dir / stored_name
-    destination.write_bytes(payload)
-    destination_path = str(destination.resolve())
-
-    if existing:
-        old_path = existing.get("storage_path")
-        update_library_file(
-            existing["id"], user_id,
-            original_name=safe_name,
-            stored_name=stored_name,
-            storage_path=destination_path,
-            mime_type=mime_type or "",
-            file_extension=file_extension,
-            file_size=len(payload),
-            content_hash=content_hash,
-        )
-        if old_path and old_path != destination_path:
-            try:
-                Path(old_path).unlink(missing_ok=True)
-            except OSError:
-                pass
-        return destination_path
-
-    record_id = add_library_file(
-        user_id=user_id, original_name=safe_name, stored_name=stored_name,
-        storage_path=destination_path, mime_type=mime_type or "",
-        file_extension=file_extension, file_size=len(payload),
-        content_hash=content_hash,
-    )
-    if record_id is None:
-        concurrent = get_library_file_by_name(user_id, safe_name)
-        try:
-            destination.unlink(missing_ok=True)
-        except OSError:
-            pass
-        if concurrent and concurrent.get("content_hash") == content_hash:
-            return concurrent.get("storage_path")
-        raise ValueError(f"Unable to save '{safe_name}' to the private Library.")
-    return destination_path
-
-
-def save_uploaded_files(handler, content_length, user_id):
-    """Parse multipart chat uploads and automatically add them to User Library."""
     if content_length <= 0:
         raise ValueError("Upload request was empty.")
+
     if content_length > MAX_UPLOAD_SIZE:
-        raise ValueError(f"Upload exceeds the {MAX_UPLOAD_SIZE // (1024 * 1024)} MB limit.")
+        raise ValueError(
+            f"Upload exceeds the {MAX_UPLOAD_SIZE // (1024 * 1024)} MB limit."
+        )
+
     content_type = handler.headers.get("Content-Type", "")
     if not content_type.lower().startswith("multipart/form-data"):
         raise ValueError("Expected a multipart/form-data upload request.")
+
     body = handler.rfile.read(content_length)
+
     message = BytesParser(policy=default).parsebytes(
-        (f"Content-Type: {content_type}\r\nMIME-Version: 1.0\r\n\r\n").encode("utf-8") + body
+        (f"Content-Type: {content_type}\r\n"
+         "MIME-Version: 1.0\r\n\r\n").encode("utf-8") + body
     )
+
     text_message = ""
     saved_paths = []
-    seen_names = set()
+
     for part in message.iter_parts():
-        field_name = part.get_param("name", header="Content-Disposition")
+        field_name = part.get_param(
+            "name",
+            header="Content-Disposition",
+        )
+
         filename = part.get_filename()
+
         if field_name == "message" and not filename:
             payload = part.get_payload(decode=True) or b""
             text_message = payload.decode("utf-8", errors="replace")
             continue
+
         if field_name != "files" or not filename:
             continue
-        safe_name = Path(filename).name.strip()
-        if not safe_name:
-            raise ValueError("One of the attached files has an invalid filename.")
+
+        safe_name = Path(filename).name
         payload = part.get_payload(decode=True) or b""
+
         if len(payload) > MAX_UPLOAD_SIZE:
-            raise ValueError(f"File '{safe_name}' exceeds {MAX_UPLOAD_SIZE // (1024 * 1024)} MB limit.")
-        key = safe_name.casefold()
-        if key in seen_names:
-            raise ValueError(f"The filename '{safe_name}' is attached more than once. Please attach only one version per request.")
-        seen_names.add(key)
-        mime_type = part.get_content_type() or mimetypes.guess_type(safe_name)[0] or ""
-        saved_paths.append(_store_chat_attachment_in_library(user_id, safe_name, payload, mime_type))
+            raise ValueError(
+                f"File '{safe_name}' exceeds the "
+                f"{MAX_UPLOAD_SIZE // (1024 * 1024)} MB limit."
+            )
+
+        stored_name = f"{uuid.uuid4().hex}_{safe_name}"
+        destination = UPLOAD_DIR / stored_name
+        destination.write_bytes(payload)
+        saved_paths.append(str(destination.resolve()))
+
     return text_message.strip(), saved_paths
-
-
-def save_library_files(handler, content_length, user_id):
-    """Legacy compatibility endpoint using the same filename-based Library rules."""
-    if content_length <= 0:
-        raise ValueError("Upload request was empty.")
-    if content_length > MAX_UPLOAD_SIZE:
-        raise ValueError(f"Upload exceeds the {MAX_UPLOAD_SIZE // (1024 * 1024)} MB limit.")
-    content_type = handler.headers.get("Content-Type", "")
-    if not content_type.lower().startswith("multipart/form-data"):
-        raise ValueError("Expected a multipart/form-data upload request.")
-    body = handler.rfile.read(content_length)
-    message = BytesParser(policy=default).parsebytes(
-        (f"Content-Type: {content_type}\r\nMIME-Version: 1.0\r\n\r\n").encode("utf-8") + body
-    )
-    added = []
-    for part in message.iter_parts():
-        filename = part.get_filename()
-        if not filename:
-            continue
-        safe_name = Path(filename).name.strip()
-        if not safe_name:
-            continue
-        payload = part.get_payload(decode=True) or b""
-        if len(payload) > MAX_UPLOAD_SIZE:
-            raise ValueError(f"File '{safe_name}' exceeds {MAX_UPLOAD_SIZE // (1024 * 1024)} MB limit.")
-        mime_type = part.get_content_type() or mimetypes.guess_type(safe_name)[0] or ""
-        path = _store_chat_attachment_in_library(user_id, safe_name, payload, mime_type)
-        record = get_library_file_by_name(user_id, safe_name)
-        added.append({"id": record["id"], "original_name": safe_name, "path": path})
-    return added
-
-
-# ============================================================
-# AUTHENTICATION HELPERS
-# ============================================================
-
-SESSION_COOKIE_NAME = "vault_session"
-
-
-def get_session_token(handler):
-    cookie_header = handler.headers.get("Cookie", "")
-    if not cookie_header:
-        return None
-
-    cookie = SimpleCookie()
-    try:
-        cookie.load(cookie_header)
-    except Exception:
-        return None
-
-    morsel = cookie.get(SESSION_COOKIE_NAME)
-    return morsel.value if morsel else None
-
-
-def get_authenticated_user(handler):
-    token = get_session_token(handler)
-    if not token:
-        return None
-    return get_session(token)
 
 
 # ============================================================
@@ -2067,7 +1739,6 @@ class VaultHandler(BaseHTTPRequestHandler):
         self,
         payload,
         status=200,
-        extra_headers=None,
     ):
 
         encoded = json.dumps(
@@ -2091,9 +1762,6 @@ class VaultHandler(BaseHTTPRequestHandler):
             "Cache-Control",
             "no-cache, no-store, must-revalidate",
         )
-
-        for header_name, header_value in (extra_headers or {}).items():
-            self.send_header(header_name, header_value)
 
         self.end_headers()
 
@@ -2173,37 +1841,6 @@ class VaultHandler(BaseHTTPRequestHandler):
 
 
     # ========================================================
-    # AUTH GUARD
-    # ========================================================
-
-    def require_auth_page(self):
-        user = get_authenticated_user(self)
-        if user is not None:
-            return user
-
-        self.send_response(302)
-        self.send_header("Location", "/login")
-        self.send_header("Cache-Control", "no-cache, no-store, must-revalidate")
-        self.end_headers()
-        return None
-
-
-    def require_auth_api(self):
-        user = get_authenticated_user(self)
-        if user is not None:
-            return user
-
-        self.send_json(
-            {
-                "success": False,
-                "error": "Authentication required.",
-            },
-            status=401,
-        )
-        return None
-
-
-    # ========================================================
     # GET
     # ========================================================
 
@@ -2249,26 +1886,10 @@ class VaultHandler(BaseHTTPRequestHandler):
 
 
         # ----------------------------------------------------
-        # USER LIBRARY
-        # ----------------------------------------------------
-
-        if route == "/api/library":
-            user = self.require_auth_api()
-            if user is None:
-                return
-            self.handle_library_list(user)
-            return
-
-
-        # ----------------------------------------------------
         # CHAT JOB STATUS
         # ----------------------------------------------------
 
         if route.startswith("/api/chat/status/"):
-            user = self.require_auth_api()
-            if user is None:
-                return
-
 
             job_id = route.split(
                 "/api/chat/status/",
@@ -2276,8 +1897,7 @@ class VaultHandler(BaseHTTPRequestHandler):
             )[1]
 
             self.handle_chat_status(
-                job_id,
-                user,
+                job_id
             )
 
             return
@@ -2288,10 +1908,6 @@ class VaultHandler(BaseHTTPRequestHandler):
         # ----------------------------------------------------
 
         if route in PAGES:
-
-            if route not in {"/", "/landing", "/login"}:
-                if self.require_auth_page() is None:
-                    return
 
             filename = PAGES[
                 route
@@ -2376,12 +1992,6 @@ class VaultHandler(BaseHTTPRequestHandler):
                         html
                     )
 
-                if route == "/library":
-
-                    html = patch_library_page(
-                        html
-                    )
-
 
                 # --------------------------------------------
                 # Send page
@@ -2463,32 +2073,11 @@ class VaultHandler(BaseHTTPRequestHandler):
             or "/"
         )
 
-        if route == "/api/login":
-            self.handle_login()
-            return
-
-        if route == "/api/logout":
-            self.handle_logout()
-            return
-
-        if route == "/api/library/upload":
-            user = self.require_auth_api()
-            if user is None:
-                return
-            self.handle_library_upload(user)
-            return
-
         if route == "/api/chat":
-            user = self.require_auth_api()
-            if user is None:
-                return
-            self.handle_chat(user)
+            self.handle_chat()
             return
 
         if route == "/api/clear-session":
-            user = self.require_auth_api()
-            if user is None:
-                return
             self.handle_clear_session()
             return
 
@@ -2502,155 +2091,10 @@ class VaultHandler(BaseHTTPRequestHandler):
 
 
     # ========================================================
-    # HANDLE LOGIN
-    # ========================================================
-
-    def handle_login(self):
-        try:
-            content_length = int(self.headers.get("Content-Length", "0"))
-        except ValueError:
-            content_length = 0
-
-        if content_length <= 0 or content_length > 1024 * 1024:
-            self.send_json(
-                {"success": False, "error": "Invalid login request."},
-                status=400,
-            )
-            return
-
-        try:
-            body = self.rfile.read(content_length)
-            data = json.loads(body.decode("utf-8"))
-        except Exception:
-            self.send_json(
-                {"success": False, "error": "Invalid JSON login request."},
-                status=400,
-            )
-            return
-
-        operator_id = str(data.get("operator_id", "")).strip()
-        password = str(data.get("password", ""))
-
-        if not operator_id or not password:
-            self.send_json(
-                {"success": False, "error": "Operator ID and security key are required."},
-                status=400,
-            )
-            return
-
-        user = authenticate_user(operator_id, password)
-        if user is None:
-            self.send_json(
-                {"success": False, "error": "Invalid operator ID or security key."},
-                status=401,
-            )
-            return
-
-        old_token = get_session_token(self)
-        if old_token:
-            destroy_session(old_token)
-
-        token = create_session(user)
-        cookie = (
-            f"{SESSION_COOKIE_NAME}={token}; "
-            "Path=/; HttpOnly; SameSite=Lax"
-        )
-
-        self.send_json(
-            {
-                "success": True,
-                "message": "Authentication successful.",
-                "user": {
-                    "operator_id": user["operator_id"],
-                    "name": user["name"],
-                    "role": user["role"],
-                    "organization": user["organization"],
-                },
-            },
-            status=200,
-            extra_headers={"Set-Cookie": cookie},
-        )
-
-
-    # ========================================================
-    # HANDLE LOGOUT
-    # ========================================================
-
-    def handle_logout(self):
-        token = get_session_token(self)
-        if token:
-            destroy_session(token)
-
-        expired_cookie = (
-            f"{SESSION_COOKIE_NAME}=; Path=/; HttpOnly; "
-            "SameSite=Lax; Max-Age=0"
-        )
-
-        self.send_json(
-            {"success": True},
-            extra_headers={"Set-Cookie": expired_cookie},
-        )
-
-
-    # ========================================================
-    # HANDLE USER LIBRARY
-    # ========================================================
-
-    def handle_library_list(self, user):
-        try:
-            files = get_library_files(int(user["user_id"]))
-            self.send_json(
-                {
-                    "success": True,
-                    "files": files,
-                }
-            )
-        except Exception as error:
-            self.send_json(
-                {
-                    "success": False,
-                    "error": str(error),
-                },
-                status=500,
-            )
-
-
-    def handle_library_upload(self, user):
-        try:
-            content_length = int(self.headers.get("Content-Length", "0"))
-        except ValueError:
-            content_length = 0
-
-        try:
-            added, skipped = save_library_files(
-                self,
-                content_length,
-                user["user_id"],
-            )
-
-            self.send_json(
-                {
-                    "success": True,
-                    "added": added,
-                    "skipped": skipped,
-                },
-                status=201 if added else 200,
-            )
-        except Exception as error:
-            self.send_json(
-                {
-                    "success": False,
-                    "error": str(error),
-                },
-                status=400,
-            )
-
-
-    # ========================================================
     # HANDLE CHAT
     # ========================================================
 
-    def handle_chat(self, user):
+    def handle_chat(self):
 
         if vault is None:
 
@@ -2677,7 +2121,6 @@ class VaultHandler(BaseHTTPRequestHandler):
             message, attachment_paths = save_uploaded_files(
                 self,
                 content_length,
-                user["user_id"],
             )
 
         except Exception as error:
@@ -2709,7 +2152,6 @@ class VaultHandler(BaseHTTPRequestHandler):
             job_id = start_chat_job(
                 message,
                 attachment_paths=attachment_paths,
-                user_id=user["user_id"],
             )
 
         except Exception as error:
@@ -2741,7 +2183,7 @@ class VaultHandler(BaseHTTPRequestHandler):
     # CHAT JOB STATUS
     # ========================================================
 
-    def handle_chat_status(self, job_id, user):
+    def handle_chat_status(self, job_id):
 
         with CHAT_JOBS_LOCK:
             job = CHAT_JOBS.get(job_id)
@@ -2763,17 +2205,6 @@ class VaultHandler(BaseHTTPRequestHandler):
                 status=404,
             )
 
-            return
-
-
-        if job.get("user_id") != user.get("user_id"):
-            self.send_json(
-                {
-                    "success": False,
-                    "error": "V.A.U.L.T. request ID not found.",
-                },
-                status=404,
-            )
             return
 
 

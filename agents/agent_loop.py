@@ -657,11 +657,11 @@ class AgentLoop:
 
             stripped_line = line.strip()
 
-            upper_line = (
-                stripped_line.upper()
-            )
+            upper_line = stripped_line.upper()
 
+            # --------------------------------------------------
             # ACTION
+            # --------------------------------------------------
 
             if upper_line.startswith(
                 "ACTION:"
@@ -674,20 +674,54 @@ class AgentLoop:
                         1,
                     )[1]
                     .strip()
-                    .lower()
                 )
 
-                if action_value == "final":
+                action_value_lower = action_value.lower()
+
+                if action_value_lower == "final":
+
                     action_type = "final"
 
-                elif action_value == "tool":
+                elif action_value_lower == "tool":
+
                     action_type = "tool"
+
+                elif action_value in self.tools:
+
+                    # Accept the shorthand emitted by some
+                    # local models:
+                    #
+                    # ACTION: file_exists
+                    #
+                    # instead of:
+                    #
+                    # ACTION: tool
+                    # NAME: file_exists
+
+                    action_type = "tool"
+                    name = action_value
+
+                else:
+
+                    # Case-insensitive fallback for tool names.
+                    for tool_name in self.tools:
+
+                        if (
+                            tool_name.lower()
+                            == action_value_lower
+                        ):
+
+                            action_type = "tool"
+                            name = tool_name
+                            break
 
                 current_section = None
 
                 continue
 
+            # --------------------------------------------------
             # NAME
+            # --------------------------------------------------
 
             if upper_line.startswith(
                 "NAME:"
@@ -706,7 +740,9 @@ class AgentLoop:
 
                 continue
 
+            # --------------------------------------------------
             # ARGUMENTS
+            # --------------------------------------------------
 
             if upper_line.startswith(
                 "ARGUMENTS:"
@@ -730,7 +766,9 @@ class AgentLoop:
 
                 continue
 
+            # --------------------------------------------------
             # CONTENT
+            # --------------------------------------------------
 
             if upper_line.startswith(
                 "CONTENT:"
@@ -754,7 +792,9 @@ class AgentLoop:
 
                 continue
 
+            # --------------------------------------------------
             # MULTILINE SECTIONS
+            # --------------------------------------------------
 
             if current_section == "content":
 

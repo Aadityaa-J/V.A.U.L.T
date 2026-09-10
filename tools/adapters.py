@@ -119,7 +119,37 @@ class FileExistsTool(BaseTool):
                 "File path arguments must be a string."
             )
 
-        return file_exists(arguments)
+        # ------------------------------------------------------
+        # Accept both:
+        #
+        # D:\\path\\file.html
+        #
+        # and:
+        #
+        # {"file_path": "D:\\path\\file.html"}
+        # ------------------------------------------------------
+
+        cleaned = arguments.strip()
+
+        if cleaned.startswith("{"):
+            try:
+                data = json.loads(cleaned)
+
+                if isinstance(data, dict):
+                    cleaned = data.get(
+                        "file_path",
+                        ""
+                    )
+
+            except json.JSONDecodeError:
+                pass
+
+        if not isinstance(cleaned, str):
+            raise TypeError(
+                "File path must be a string."
+            )
+
+        return file_exists(cleaned.strip())
 
 
 class CreateDirectoryTool(BaseTool):
@@ -191,34 +221,117 @@ class ReadDocumentTool(BaseTool):
     name = "read_document"
 
     description = (
-        "Read a supported text-based document. "
-        "Arguments should be the document file path."
+        "Read the contents of a supported document. "
+        "For a document or uploaded file, use this tool "
+        "when the user asks what the file says or asks "
+        "you to analyze its contents. "
+        "Arguments may be either a plain file path or "
+        "JSON containing a 'file_path' field."
     )
 
     def execute(self, arguments: Any) -> Any:
         if not isinstance(arguments, str):
             raise TypeError(
-                "Document path must be a string."
+                "Document path arguments must be a string."
             )
 
-        return read_document(arguments)
+        cleaned = arguments.strip()
+
+        # ------------------------------------------------------
+        # Accept:
+        #
+        # D:\\path\\file.html
+        #
+        # or:
+        #
+        # {"file_path": "D:\\path\\file.html"}
+        # ------------------------------------------------------
+
+        if cleaned.startswith("{"):
+
+            try:
+                data = json.loads(cleaned)
+
+            except json.JSONDecodeError as exc:
+                raise ValueError(
+                    "Invalid JSON document arguments."
+                ) from exc
+
+            if not isinstance(data, dict):
+                raise ValueError(
+                    "Document arguments must be a JSON object."
+                )
+
+            cleaned = data.get(
+                "file_path",
+                ""
+            )
+
+        if not isinstance(cleaned, str):
+            raise TypeError(
+                "Document file path must be a string."
+            )
+
+        cleaned = cleaned.strip()
+
+        if not cleaned:
+            raise ValueError(
+                "Document file path cannot be empty."
+            )
+
+        return read_document(cleaned)
 
 
 class DocumentInfoTool(BaseTool):
     name = "document_info"
 
     description = (
-        "Get metadata about a supported text-based document. "
-        "Arguments should be the document file path."
+        "Get metadata about a supported document. "
+        "Arguments may be either a plain file path or "
+        "JSON containing a 'file_path' field."
     )
 
     def execute(self, arguments: Any) -> Any:
         if not isinstance(arguments, str):
             raise TypeError(
-                "Document path must be a string."
+                "Document path arguments must be a string."
             )
 
-        return document_info(arguments)
+        cleaned = arguments.strip()
+
+        if cleaned.startswith("{"):
+
+            try:
+                data = json.loads(cleaned)
+
+            except json.JSONDecodeError as exc:
+                raise ValueError(
+                    "Invalid JSON document arguments."
+                ) from exc
+
+            if not isinstance(data, dict):
+                raise ValueError(
+                    "Document arguments must be a JSON object."
+                )
+
+            cleaned = data.get(
+                "file_path",
+                ""
+            )
+
+        if not isinstance(cleaned, str):
+            raise TypeError(
+                "Document file path must be a string."
+            )
+
+        cleaned = cleaned.strip()
+
+        if not cleaned:
+            raise ValueError(
+                "Document file path cannot be empty."
+            )
+
+        return document_info(cleaned)
 
 
 class SearchDocumentTool(BaseTool):
@@ -226,8 +339,8 @@ class SearchDocumentTool(BaseTool):
 
     description = (
         "Search for text inside a supported document. "
-        "Arguments must be JSON containing 'file_path' "
-        "and 'query'."
+        "Arguments must be JSON containing "
+        "'file_path' and 'query'."
     )
 
     def execute(self, arguments: Any) -> Any:
@@ -238,9 +351,34 @@ class SearchDocumentTool(BaseTool):
 
         data = json.loads(arguments)
 
+        if not isinstance(data, dict):
+            raise ValueError(
+                "Search arguments must be a JSON object."
+            )
+
+        file_path = data.get(
+            "file_path",
+            ""
+        )
+
+        query = data.get(
+            "query",
+            ""
+        )
+
+        if not isinstance(file_path, str):
+            raise TypeError(
+                "'file_path' must be a string."
+            )
+
+        if not isinstance(query, str):
+            raise TypeError(
+                "'query' must be a string."
+            )
+
         return search_document(
-            file_path=data["file_path"],
-            query=data["query"],
+            file_path=file_path,
+            query=query,
         )
 
 
@@ -248,9 +386,10 @@ class DocumentSummaryTool(BaseTool):
     name = "document_summary"
 
     description = (
-        "Generate a simple extractive summary of a supported "
-        "document. Arguments must be JSON containing "
-        "'file_path' and optionally 'max_words'."
+        "Generate a simple extractive summary of a "
+        "supported document. Arguments must be JSON "
+        "containing 'file_path' and optionally "
+        "'max_words'."
     )
 
     def execute(self, arguments: Any) -> Any:
@@ -261,9 +400,34 @@ class DocumentSummaryTool(BaseTool):
 
         data = json.loads(arguments)
 
+        if not isinstance(data, dict):
+            raise ValueError(
+                "Summary arguments must be a JSON object."
+            )
+
+        file_path = data.get(
+            "file_path",
+            ""
+        )
+
+        max_words = data.get(
+            "max_words",
+            100
+        )
+
+        if not isinstance(file_path, str):
+            raise TypeError(
+                "'file_path' must be a string."
+            )
+
+        if not isinstance(max_words, int):
+            raise TypeError(
+                "'max_words' must be an integer."
+            )
+
         return get_document_summary(
-            file_path=data["file_path"],
-            max_words=data.get("max_words", 100),
+            file_path=file_path,
+            max_words=max_words,
         )
 
 
