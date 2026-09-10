@@ -28,6 +28,13 @@ from database import (
     get_library_file_by_name,
     update_library_file,
     delete_library_file,
+    add_knowledge_file,
+    get_knowledge_files,
+    get_knowledge_file,
+    get_knowledge_file_by_name,
+    get_knowledge_file_by_hash,
+    update_knowledge_file,
+    delete_knowledge_file,
 )
 
 
@@ -41,6 +48,9 @@ PORT = 8000
 # Uploaded files stay local to the V.A.U.L.T. machine.
 UPLOAD_DIR = PROJECT_ROOT / "uploaded_files"
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+
+KNOWLEDGE_DIR = PROJECT_ROOT / "knowledge_files"
+KNOWLEDGE_DIR.mkdir(parents=True, exist_ok=True)
 
 MAX_UPLOAD_SIZE = 25 * 1024 * 1024
 # Uploads are intentionally not restricted by extension.
@@ -185,6 +195,7 @@ PAGES = {
     "/anchor": "ANCHOR_PAGE.HTML",
     "/analysis": "Analysis.html",
     "/library": "Library.html",
+    "/knowledge": "knowledge_base.html",
     "/security": "Security.html",
 }
 
@@ -199,6 +210,10 @@ TEXT_ROUTES = {
 
     "library": "/library",
     "files": "/library",
+
+    "knowledge": "/knowledge",
+    "knowledge base": "/knowledge",
+    "global knowledge": "/knowledge",
 
     "chats": "/anchor",
     "chat": "/anchor",
@@ -264,6 +279,9 @@ def route_from_text(text):
 
     if "library" in text:
         return "/library"
+
+    if "knowledge" in text:
+        return "/knowledge"
 
     if "new task" in text:
         return "/anchor"
@@ -1994,6 +2012,15 @@ def get_authenticated_user(handler):
 # HTTP HANDLER
 # ============================================================
 
+
+def patch_knowledge_page(html):
+    script = '<script>\n(function () {\n  const grid = document.getElementById(\'resourceGrid\');\n  const addButton = Array.from(document.querySelectorAll(\'button\')).find(b => (b.textContent || \'\').includes(\'Add to Knowledge Base\'));\n  if (!grid) return;\n\n  const input = document.createElement(\'input\');\n  input.type = \'file\'; input.multiple = true; input.style.display = \'none\';\n  document.body.appendChild(input);\n\n  const drawer = document.createElement(\'aside\');\n  drawer.id = \'inspectorDrawer\';\n  drawer.className = \'fixed top-12 right-0 bottom-7 z-50 w-full max-w-md bg-surface-container-lowest border-l border-outline-variant/40 shadow-2xl translate-x-full transition-transform duration-300 overflow-y-auto\';\n  drawer.innerHTML = `\n    <div class="p-5 border-b border-outline-variant/30 flex items-center justify-between">\n      <div><div class="font-label-micro text-outline tracking-widest">RESOURCE INSPECTOR</div><h2 id="vaultDrawerTitle" class="text-xl font-semibold text-on-surface mt-1"></h2></div>\n      <button id="vaultCloseDrawer" class="text-outline hover:text-on-surface text-xl">×</button>\n    </div>\n    <div class="p-5 space-y-5">\n      <div><span id="vaultDrawerBadge" class="font-label-micro px-2 py-1 bg-surface-container border border-outline-variant/40 text-primary rounded"></span></div>\n      <p id="vaultDrawerSummary" class="text-sm text-on-surface-variant"></p>\n      <div class="grid grid-cols-2 gap-3 text-xs">\n        <div class="p-3 bg-surface-container-low border border-outline-variant/20"><div class="text-outline">CHUNKS</div><div id="vaultDrawerChunks" class="text-on-surface mt-1">0</div></div>\n        <div class="p-3 bg-surface-container-low border border-outline-variant/20"><div class="text-outline">SIZE</div><div id="vaultDrawerSize" class="text-on-surface mt-1"></div></div>\n        <div class="p-3 bg-surface-container-low border border-outline-variant/20"><div class="text-outline">UPDATED</div><div id="vaultDrawerUpdated" class="text-on-surface mt-1"></div></div>\n        <div class="p-3 bg-surface-container-low border border-outline-variant/20"><div class="text-outline">STATUS</div><div id="vaultDrawerStatus" class="text-primary mt-1 uppercase"></div></div>\n      </div>\n      <div><div class="text-[9px] text-outline tracking-widest mb-2">SHA-256</div><div id="vaultDrawerHash" class="font-mono text-[10px] break-all text-on-surface-variant"></div></div>\n      <div><div class="text-[9px] text-outline tracking-widest mb-2">PREVIEW</div><pre id="vaultDrawerPreview" class="whitespace-pre-wrap max-h-56 overflow-auto text-xs text-on-surface-variant bg-surface-container-low p-3 border border-outline-variant/20"></pre></div>\n      <div class="flex gap-2">\n        <a id="vaultDownload" class="flex-1 text-center px-3 py-2 bg-primary-container text-on-primary-container font-semibold rounded" href="#">Download</a>\n        <button id="vaultDelete" class="px-3 py-2 border border-error/40 text-error rounded">Delete</button>\n      </div>\n    </div>`;\n  document.body.appendChild(drawer);\n  const backdrop = document.getElementById(\'inspectorBackdrop\');\n\n  let resources = [];\n  let activeFilter = \'All\';\n  let activeSort = \'Recently added\';\n  let query = \'\';\n  let selected = null;\n\n  const esc = value => String(value ?? \'\').replace(/[&<>\'"]/g, c => ({\'&\':\'&amp;\',\'<\':\'&lt;\',\'>\':\'&gt;\',"\'":\'&#39;\',\'"\':\'&quot;\'}[c]));\n  const typeFor = r => {\n    const ext = (r.file_extension || \'\').toLowerCase();\n    if ([\'.jpg\',\'.jpeg\',\'.png\',\'.gif\',\'.bmp\',\'.webp\',\'.svg\',\'.tif\',\'.tiff\'].includes(ext)) return \'IMAGES\';\n    if ([\'.csv\',\'.xlsx\',\'.xls\',\'.parquet\'].includes(ext)) return \'DATA\';\n    if ([\'.py\',\'.js\',\'.ts\',\'.java\',\'.cpp\',\'.c\',\'.h\',\'.css\',\'.html\',\'.sql\',\'.json\'].includes(ext)) return \'CODE\';\n    if ([\'.pdf\',\'.doc\',\'.docx\',\'.txt\',\'.md\',\'.rtf\'].includes(ext)) return \'DOCUMENTS\';\n    return \'KNOWLEDGE\';\n  };\n  const sizeFor = n => { n=Number(n||0); if(n<1024) return n+\' B\'; if(n<1024*1024) return (n/1024).toFixed(1)+\' KB\'; if(n<1024*1024*1024) return (n/1024/1024).toFixed(1)+\' MB\'; return (n/1024/1024/1024).toFixed(2)+\' GB\'; };\n  const dateFor = s => { try { return new Date(s).toLocaleString(); } catch (_) { return s || \'\'; } };\n\n  function filtered() {\n    let list = resources.filter(r => {\n      const t = (r.original_name+\' \'+(r.summary||\'\')+\' \'+(r.preview||\'\')).toLowerCase();\n      return (!query || t.includes(query.toLowerCase())) && (activeFilter === \'All\' || typeFor(r) === activeFilter.toUpperCase());\n    });\n    if (activeSort === \'Alphabetical\') list.sort((a,b)=>a.original_name.localeCompare(b.original_name));\n    else if (activeSort === \'Recently used\') list.sort((a,b)=>String(b.updated_at).localeCompare(String(a.updated_at)));\n    else list.sort((a,b)=>String(b.added_at).localeCompare(String(a.added_at)));\n    return list;\n  }\n\n  function render() {\n    const list = filtered();\n    grid.innerHTML = list.length ? list.map(r => `\n      <article class="resource-card cursor-pointer border border-outline-variant/30 bg-surface-container-low/75 hover:border-primary/60 hover:bg-surface-container/80 transition-all p-4" data-id="${r.id}">\n        <div class="flex items-start justify-between gap-3"><div class="w-10 h-10 bg-surface-container-high border border-outline-variant/30 flex items-center justify-center text-primary font-mono">${esc((r.file_extension||\'FILE\').replace(\'.\',\'\').slice(0,4).toUpperCase())}</div><span class="inspecting-badge hidden font-label-micro text-primary">INSPECTING</span></div>\n        <div class="mt-4"><div class="card-title text-on-surface font-semibold truncate" title="${esc(r.original_name)}">${esc(r.original_name)}</div><div class="mt-1 text-[10px] text-outline uppercase tracking-wider">${esc(typeFor(r))} // ${esc(r.processing_status || \'pending\')}</div></div>\n        <p class="mt-3 text-xs leading-5 text-on-surface-variant line-clamp-3">${esc(r.summary || \'Global Knowledge Base resource.\')}</p>\n        <div class="mt-4 pt-3 border-t border-outline-variant/20 flex justify-between text-[9px] text-outline font-mono"><span>${sizeFor(r.file_size)}</span><span>${Number(r.chunk_count||0)} CHUNKS</span></div>\n      </article>`).join(\'\') : \'<div class="col-span-full border border-dashed border-outline-variant/30 p-10 text-center text-sm text-outline">NO GLOBAL KNOWLEDGE RESOURCES</div>\';\n    grid.querySelectorAll(\'.resource-card\').forEach(card => card.addEventListener(\'click\', () => openDrawer(Number(card.dataset.id))));\n  }\n\n  async function load() {\n    try { const res = await fetch(\'/api/knowledge\', {credentials:\'same-origin\'}); const data = await res.json(); if (!res.ok || !data.success) throw new Error(data.error || \'Unable to load Knowledge Base.\'); resources = data.resources || []; render(); }\n    catch (e) { grid.innerHTML = `<div class="col-span-full border border-error/30 p-8 text-center text-error">${esc(e.message)}</div>`; }\n  }\n\n  function openDrawer(id) {\n    selected = resources.find(r=>Number(r.id)===id); if (!selected) return;\n    document.getElementById(\'vaultDrawerTitle\').textContent = selected.original_name;\n    document.getElementById(\'vaultDrawerBadge\').textContent = typeFor(selected) + \' // \' + (selected.file_extension || \'FILE\').toUpperCase();\n    document.getElementById(\'vaultDrawerSummary\').textContent = selected.summary || \'\';\n    document.getElementById(\'vaultDrawerChunks\').textContent = selected.chunk_count || 0;\n    document.getElementById(\'vaultDrawerSize\').textContent = sizeFor(selected.file_size);\n    document.getElementById(\'vaultDrawerUpdated\').textContent = dateFor(selected.updated_at);\n    document.getElementById(\'vaultDrawerStatus\').textContent = selected.processing_status || \'pending\';\n    document.getElementById(\'vaultDrawerHash\').textContent = selected.content_hash || \'\';\n    document.getElementById(\'vaultDrawerPreview\').textContent = selected.preview || \'Preview will be populated by the ingestion pipeline.\';\n    document.getElementById(\'vaultDownload\').href = selected.download_url;\n    drawer.classList.remove(\'translate-x-full\'); drawer.classList.add(\'translate-x-0\');\n    backdrop.classList.remove(\'opacity-0\',\'pointer-events-none\'); backdrop.classList.add(\'opacity-100\',\'pointer-events-auto\');\n  }\n  function closeDrawer() { drawer.classList.remove(\'translate-x-0\'); drawer.classList.add(\'translate-x-full\'); backdrop.classList.remove(\'opacity-100\',\'pointer-events-auto\'); backdrop.classList.add(\'opacity-0\',\'pointer-events-none\'); selected=null; }\n\n  if (addButton) addButton.addEventListener(\'click\', () => input.click());\n  input.addEventListener(\'change\', async () => {\n    if (!input.files.length) return;\n    const form = new FormData(); Array.from(input.files).forEach(f=>form.append(\'files\', f));\n    if (addButton) { addButton.disabled=true; addButton.style.opacity=\'.6\'; }\n    try { const res=await fetch(\'/api/knowledge/upload\',{method:\'POST\',body:form,credentials:\'same-origin\'}); const data=await res.json(); if(!res.ok || !data.success) throw new Error(data.error||\'Upload failed.\'); resources=data.resources||[]; render(); }\n    catch(e) { alert(e.message); }\n    finally { input.value=\'\'; if(addButton){addButton.disabled=false;addButton.style.opacity=\'\';} }\n  });\n  document.getElementById(\'vaultCloseDrawer\').addEventListener(\'click\',closeDrawer);\n  backdrop.addEventListener(\'click\',closeDrawer);\n  document.getElementById(\'vaultDelete\').addEventListener(\'click\', async () => {\n    if (!selected || !confirm(\'Remove this resource from the global Knowledge Base?\')) return;\n    const res=await fetch(\'/api/knowledge/delete\',{method:\'POST\',headers:{\'Content-Type\':\'application/json\'},body:JSON.stringify({id:selected.id}),credentials:\'same-origin\'}); const data=await res.json(); if(!res.ok||!data.success){alert(data.error||\'Delete failed.\');return;} closeDrawer(); await load();\n  });\n  window.addEventListener(\'keydown\',e=>{if(e.key===\'Escape\')closeDrawer();});\n\n  const search = document.querySelector(\'input[placeholder="Search your knowledge base..."]\');\n  if(search) search.addEventListener(\'input\',()=>{query=search.value;render();});\n  const filterButtons = Array.from(document.querySelectorAll(\'button\')).filter(b=>[\'All\',\'Documents\',\'Knowledge\',\'Images\',\'Data\',\'Code\'].includes((b.textContent||\'\').trim()));\n  filterButtons.forEach(b=>b.addEventListener(\'click\',()=>{activeFilter=b.textContent.trim();filterButtons.forEach(x=>x.classList.remove(\'bg-primary\',\'text-on-primary\'));b.classList.add(\'bg-primary\',\'text-on-primary\');render();}));\n  const sortButtons = Array.from(document.querySelectorAll(\'button\')).filter(b=>[\'Recently added\',\'Recently used\',\'Alphabetical\'].includes((b.textContent||\'\').trim()));\n  sortButtons.forEach(b=>b.addEventListener(\'click\',()=>{activeSort=b.textContent.trim();sortButtons.forEach(x=>x.classList.remove(\'text-primary\'));b.classList.add(\'text-primary\');render();}));\n  load();\n})();\n</script>'
+    # The original page already contains a placeholder inspector script; remove it so
+    # it cannot dereference the dynamically-created drawer before our live script runs.
+    html = re.sub(r"<script>\s*\(function\s*\(\)\s*\{\s*const drawer = document\.getElementById\('inspectorDrawer'\).*?</script>", "", html, count=1, flags=re.S)
+    return html.replace("</body>", script + "\n</body>")
+
+
 class VaultHandler(BaseHTTPRequestHandler):
 
 
@@ -2207,6 +2234,7 @@ class VaultHandler(BaseHTTPRequestHandler):
     # GET
     # ========================================================
 
+
     def do_GET(self):
 
         parsed_url = urlparse(
@@ -2259,6 +2287,29 @@ class VaultHandler(BaseHTTPRequestHandler):
             self.handle_library_list(user)
             return
 
+
+        # ----------------------------------------------------
+        # GLOBAL KNOWLEDGE BASE
+        # ----------------------------------------------------
+
+        if route == "/api/knowledge":
+            user = self.require_auth_api()
+            if user is None:
+                return
+            self.handle_knowledge_list()
+            return
+
+        if route.startswith("/api/knowledge/") and route.endswith("/download"):
+            user = self.require_auth_api()
+            if user is None:
+                return
+            try:
+                file_id = int(route.split("/api/knowledge/", 1)[1].rsplit("/download", 1)[0])
+            except (ValueError, TypeError):
+                self.send_json({"success": False, "error": "Invalid Knowledge Base file ID."}, status=400)
+                return
+            self.handle_knowledge_download(file_id)
+            return
 
         # ----------------------------------------------------
         # CHAT JOB STATUS
@@ -2382,6 +2433,12 @@ class VaultHandler(BaseHTTPRequestHandler):
                         html
                     )
 
+                if route == "/knowledge":
+
+                    html = patch_knowledge_page(
+                        html
+                    )
+
 
                 # --------------------------------------------
                 # Send page
@@ -2478,6 +2535,20 @@ class VaultHandler(BaseHTTPRequestHandler):
             self.handle_library_upload(user)
             return
 
+        if route == "/api/knowledge/upload":
+            user = self.require_auth_api()
+            if user is None:
+                return
+            self.handle_knowledge_upload()
+            return
+
+        if route == "/api/knowledge/delete":
+            user = self.require_auth_api()
+            if user is None:
+                return
+            self.handle_knowledge_delete()
+            return
+
         if route == "/api/chat":
             user = self.require_auth_api()
             if user is None:
@@ -2500,6 +2571,142 @@ class VaultHandler(BaseHTTPRequestHandler):
             status=404,
         )
 
+
+    # ========================================================
+    # GLOBAL KNOWLEDGE BASE HANDLERS
+    # ========================================================
+
+    def handle_knowledge_list(self):
+        rows = get_knowledge_files()
+        payload = []
+        for row in rows:
+            item = dict(row)
+            item.pop("storage_path", None)
+            item.pop("stored_name", None)
+            item["download_url"] = f"/api/knowledge/{row['id']}/download"
+            payload.append(item)
+        self.send_json({"success": True, "resources": payload, "count": len(payload)})
+
+    def handle_knowledge_upload(self):
+        try:
+            content_length = int(self.headers.get("Content-Length", "0"))
+        except ValueError:
+            content_length = 0
+        if content_length <= 0 or content_length > MAX_UPLOAD_SIZE + 1024 * 1024:
+            self.send_json({"success": False, "error": "Invalid or oversized Knowledge Base upload."}, status=400)
+            return
+        content_type = self.headers.get("Content-Type", "")
+        if not content_type.lower().startswith("multipart/form-data"):
+            self.send_json({"success": False, "error": "Expected a multipart/form-data upload request."}, status=400)
+            return
+        try:
+            body = self.rfile.read(content_length)
+            message = BytesParser(policy=default).parsebytes(
+                (f"Content-Type: {content_type}\r\nMIME-Version: 1.0\r\n\r\n").encode("utf-8") + body
+            )
+            parts = []
+            for part in message.iter_parts():
+                filename = part.get_filename()
+                if not filename:
+                    continue
+                safe_name = Path(filename).name.strip()
+                if not safe_name:
+                    raise ValueError("One of the files has an invalid filename.")
+                payload = part.get_payload(decode=True) or b""
+                if len(payload) > MAX_UPLOAD_SIZE:
+                    raise ValueError(f"File '{safe_name}' exceeds {MAX_UPLOAD_SIZE // (1024 * 1024)} MB limit.")
+                parts.append((safe_name, payload, part.get_content_type() or "application/octet-stream"))
+            if not parts:
+                raise ValueError("No file was supplied.")
+            if len(parts) > 10:
+                raise ValueError("A maximum of 10 files can be added at once.")
+            results = []
+            seen = set()
+            for original_name, payload, mime_type in parts:
+                key = original_name.casefold()
+                if key in seen:
+                    raise ValueError(f"The filename '{original_name}' is attached more than once.")
+                seen.add(key)
+                content_hash = hashlib.sha256(payload).hexdigest()
+                existing = get_knowledge_file_by_name(original_name)
+                old_path = existing.get("storage_path") if existing else None
+                if existing and existing.get("content_hash") == content_hash and Path(existing.get("storage_path", "")).exists():
+                    results.append({"id": existing["id"], "name": original_name, "action": "unchanged"})
+                    continue
+                stored_name = f"{uuid.uuid4().hex}{Path(original_name).suffix}"
+                target = KNOWLEDGE_DIR / stored_name
+                target.write_bytes(payload)
+                suffix = Path(original_name).suffix.lower()
+                summary = "Global Knowledge Base resource. Ready for ingestion."
+                preview = ""
+                if mime_type.startswith("text/") or suffix in {".txt", ".md", ".csv", ".json", ".xml", ".log", ".py", ".js", ".html", ".css"}:
+                    preview = payload[:1200].decode("utf-8", errors="replace").strip()
+                    if preview:
+                        summary = "Text resource stored locally; ingestion metadata is ready for the RAG pipeline."
+                if existing:
+                    update_knowledge_file(existing["id"], stored_name=stored_name, storage_path=str(target), mime_type=mime_type, file_extension=suffix, file_size=len(payload), content_hash=content_hash, processing_status="pending", ocr_used=0, chunk_count=0, summary=summary, preview=preview)
+                    file_id = existing["id"]
+                    action = "replaced"
+                else:
+                    file_id = add_knowledge_file(original_name, stored_name, str(target), mime_type, suffix, len(payload), content_hash, summary, preview)
+                    action = "added"
+                if old_path and old_path != str(target):
+                    try:
+                        Path(old_path).unlink(missing_ok=True)
+                    except OSError:
+                        pass
+                results.append({"id": file_id, "name": original_name, "action": action})
+            rows = get_knowledge_files()
+            resources = []
+            for row in rows:
+                item = dict(row)
+                item.pop("storage_path", None)
+                item.pop("stored_name", None)
+                item["download_url"] = f"/api/knowledge/{row['id']}/download"
+                resources.append(item)
+            self.send_json({"success": True, "results": results, "resources": resources})
+        except Exception as error:
+            self.send_json({"success": False, "error": str(error)}, status=400)
+
+    def handle_knowledge_download(self, file_id):
+        row = get_knowledge_file(file_id)
+        if row is None:
+            self.send_json({"success": False, "error": "Knowledge Base resource not found."}, status=404)
+            return
+        path = Path(row["storage_path"])
+        if not path.exists() or not path.is_file():
+            self.send_json({"success": False, "error": "Stored Knowledge Base file is missing."}, status=404)
+            return
+        try:
+            data = path.read_bytes()
+            from urllib.parse import quote
+            self.send_response(200)
+            self.send_header("Content-Type", row.get("mime_type") or "application/octet-stream")
+            self.send_header("Content-Length", str(len(data)))
+            self.send_header("Content-Disposition", f"attachment; filename*=UTF-8''{quote(row['original_name'])}")
+            self.send_header("Cache-Control", "no-cache, no-store, must-revalidate")
+            self.end_headers()
+            self.wfile.write(data)
+        except Exception as error:
+            self.send_json({"success": False, "error": str(error)}, status=500)
+
+    def handle_knowledge_delete(self):
+        try:
+            content_length = int(self.headers.get("Content-Length", "0"))
+            data = json.loads(self.rfile.read(content_length).decode("utf-8"))
+            file_id = int(data.get("id"))
+        except Exception:
+            self.send_json({"success": False, "error": "Invalid Knowledge Base delete request."}, status=400)
+            return
+        storage_path = delete_knowledge_file(file_id)
+        if storage_path is None:
+            self.send_json({"success": False, "error": "Knowledge Base resource not found."}, status=404)
+            return
+        try:
+            Path(storage_path).unlink(missing_ok=True)
+        except OSError:
+            pass
+        self.send_json({"success": True, "deleted": file_id})
 
     # ========================================================
     # HANDLE LOGIN

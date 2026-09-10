@@ -39,6 +39,30 @@ def initialize_database():
             """
         )
 
+        # Global Knowledge Base: organisation-wide resources shared by all authenticated users.
+        # This table is intentionally NOT linked to users.
+        connection.execute(
+            """
+            CREATE TABLE IF NOT EXISTS knowledge_base_files (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                original_name TEXT UNIQUE NOT NULL,
+                stored_name TEXT NOT NULL,
+                storage_path TEXT NOT NULL,
+                mime_type TEXT NOT NULL DEFAULT 'application/octet-stream',
+                file_extension TEXT NOT NULL DEFAULT '',
+                file_size INTEGER NOT NULL DEFAULT 0,
+                content_hash TEXT NOT NULL,
+                added_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                processing_status TEXT NOT NULL DEFAULT 'pending',
+                ocr_used INTEGER NOT NULL DEFAULT 0,
+                chunk_count INTEGER NOT NULL DEFAULT 0,
+                summary TEXT NOT NULL DEFAULT '',
+                preview TEXT NOT NULL DEFAULT ''
+            )
+            """
+        )
+
         # The original schema used (user_id, content_hash) as the UNIQUE key.
         # V.A.U.L.T. now intentionally de-duplicates by filename instead:
         # the same user can have one current Library entry for a given name,
@@ -434,6 +458,78 @@ def delete_library_file(file_id: int, user_id: int):
         )
         connection.commit()
 
+    return row["storage_path"]
+
+
+def add_knowledge_file(original_name, stored_name, storage_path, mime_type, file_extension, file_size, content_hash, summary="", preview=""):
+    now = datetime.now(timezone.utc).isoformat()
+    with get_connection() as connection:
+        cursor = connection.execute(
+            """INSERT INTO knowledge_base_files
+            (original_name, stored_name, storage_path, mime_type, file_extension, file_size, content_hash, added_at, updated_at, summary, preview)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (original_name, stored_name, storage_path, mime_type, file_extension, file_size, content_hash, now, now, summary, preview),
+        )
+        connection.commit()
+        return cursor.lastrowid
+
+
+def get_knowledge_files():
+    with get_connection() as connection:
+        rows = connection.execute("""SELECT id, original_name, stored_name, storage_path, mime_type, file_extension, file_size, content_hash, added_at, updated_at, processing_status, ocr_used, chunk_count, summary, preview FROM knowledge_base_files ORDER BY added_at DESC, id DESC""").fetchall()
+    return [dict(row) for row in rows]
+
+
+def get_knowledge_file(file_id):
+    with get_connection() as connection:
+        row = connection.execute("SELECT * FROM knowledge_base_files WHERE id = ?", (file_id,)).fetchone()
+    return dict(row) if row else None
+
+
+def get_knowledge_file_by_name(original_name):
+    with get_connection() as connection:
+        row = connection.execute("SELECT * FROM knowledge_base_files WHERE original_name = ?", (original_name,)).fetchone()
+    return dict(row) if row else None
+
+
+def get_knowledge_file_by_hash(content_hash):
+    with get_connection() as connection:
+        row = connection.execute("SELECT * FROM knowledge_base_files WHERE content_hash = ?", (content_hash,)).fetchone()
+    return dict(row) if row else None
+
+
+def update_knowledge_file(file_id, stored_name=None, storage_path=None, mime_type=None, file_extension=None, file_size=None, content_hash=None, processing_status=None, ocr_used=None, chunk_count=None, summary=None, preview=None):
+    current = get_knowledge_file(file_id)
+    if current is None:
+        return None
+    values = {
+        "stored_name": stored_name if stored_name is not None else current["stored_name"],
+        "storage_path": storage_path if storage_path is not None else current["storage_path"],
+        "mime_type": mime_type if mime_type is not None else current["mime_type"],
+        "file_extension": file_extension if file_extension is not None else current["file_extension"],
+        "file_size": file_size if file_size is not None else current["file_size"],
+        "content_hash": content_hash if content_hash is not None else current["content_hash"],
+        "processing_status": processing_status if processing_status is not None else current["processing_status"],
+        "ocr_used": ocr_used if ocr_used is not None else current["ocr_used"],
+        "chunk_count": chunk_count if chunk_count is not None else current["chunk_count"],
+        "summary": summary if summary is not None else current["summary"],
+        "preview": preview if preview is not None else current["preview"],
+    }
+    now = datetime.now(timezone.utc).isoformat()
+    with get_connection() as connection:
+        connection.execute("""UPDATE knowledge_base_files SET stored_name=?, storage_path=?, mime_type=?, file_extension=?, file_size=?, content_hash=?, updated_at=?, processing_status=?, ocr_used=?, chunk_count=?, summary=?, preview=? WHERE id=?""",
+            (values["stored_name"], values["storage_path"], values["mime_type"], values["file_extension"], values["file_size"], values["content_hash"], now, values["processing_status"], values["ocr_used"], values["chunk_count"], values["summary"], values["preview"], file_id))
+        connection.commit()
+    return get_knowledge_file(file_id)
+
+
+def delete_knowledge_file(file_id):
+    with get_connection() as connection:
+        row = connection.execute("SELECT storage_path FROM knowledge_base_files WHERE id = ?", (file_id,)).fetchone()
+        if row is None:
+            return None
+        connection.execute("DELETE FROM knowledge_base_files WHERE id = ?", (file_id,))
+        connection.commit()
     return row["storage_path"]
 
 
