@@ -12,6 +12,8 @@ Coordinates:
 """
 
 
+import re
+
 from agents.document_agent import DocumentAgent
 from agents.coding_agent import CodingAgent
 from agents.engineering_agent import EngineeringAgent
@@ -39,6 +41,7 @@ from tools.adapters import (
     SearchDocumentTool,
     DocumentSummaryTool,
     SearchKnowledgeTool,
+    CurrentDateTimeTool,
 )
 
 
@@ -307,6 +310,7 @@ class Orchestrator:
             DocumentSummaryTool(),
 
             SearchKnowledgeTool(),
+            CurrentDateTimeTool(),
 
         ]
 
@@ -341,44 +345,197 @@ class Orchestrator:
 
     def _get_agent_tools(
         self,
-        task_type: str
+        task_type: str,
+        task: str = "",
+        user_id=None,
     ) -> dict:
-
         """
-        Return the tools allowed for
-        a specific agent.
+        Return the tools allowed for this specific request.
+
+        Tool access is task-aware rather than globally enabled. In
+        particular, semantic RAG is attached only when the request
+        explicitly indicates that internal/organizational knowledge is
+        required. This prevents ordinary conversation, coding, and
+        calculations from being routed through the knowledge base.
         """
 
-        tool_names = self.agent_tools.get(
+        tool_names = list(self.agent_tools.get(task_type, []))
 
-            task_type,
+        # RAG is an opt-in orchestration decision.
+        if self._requires_knowledge(task):
+            tool_names.append("search_knowledge")
 
-            [],
-
-        )
+        # Date/time is another deterministic capability enabled only when
+        # the request actually asks for current temporal information.
+        if self._requires_current_datetime(task):
+            tool_names.append("get_current_datetime")
 
         tools = {}
-
         for name in tool_names:
+            if not self.tool_registry.has(name):
+                continue
 
-            if self.tool_registry.has(
-
-                name
-
-            ):
-
-                tools[name] = (
-
-                    self.tool_registry.get(
-
-                        name
-
-                    )
-
-                )
+            # SearchKnowledgeTool carries request-scoped authorization.
+            if name == "search_knowledge":
+                tools[name] = SearchKnowledgeTool(user_id=user_id)
+            else:
+                tools[name] = self.tool_registry.get(name)
 
         return tools
 
+    def _looks_like_coding_task(self, task: str) -> bool:
+        """Return True for clear software/code-generation requests.
+
+        This is deliberately a routing heuristic, not a replacement for the
+        TaskClassifier. Its only purpose is to guarantee that an explicit
+        coding request receives the CodingAgent and its coding tools.
+        """
+
+        if not isinstance(task, str):
+            return False
+
+        text = task.strip().lower()
+        if not text:
+            return False
+
+        strong_phrases = (
+            "write a python",
+            "write python",
+            "python function",
+            "python code",
+            "python script",
+            "write code",
+            "generate code",
+            "create code",
+            "implement this",
+            "implement a ",
+            "debug this code",
+            "fix this code",
+            "review this code",
+            "run this code",
+            "execute this code",
+            "test this code",
+            "programming",
+            "coding task",
+        )
+        if any(phrase in text for phrase in strong_phrases):
+            return True
+
+        # Short technical prompts containing an explicit programming
+        # language or source-code vocabulary are also routed to CodingAgent.
+        language_markers = (
+            "python", "javascript", "typescript", "java", "c++",
+            "c#", "golang", "rust", "kotlin", "swift", "sql",
+        )
+        code_markers = (
+            "function", "class", "method", "script", "variable",
+            "exception", "stack trace", "syntax error", "regex",
+            "algorithm", "api endpoint", "program", "code",
+        )
+
+        has_language = any(marker in text for marker in language_markers)
+        has_code_marker = any(marker in text for marker in code_markers)
+        return has_language and has_code_marker
+
+    def _requires_knowledge(self, task: str) -> bool:
+        """
+        Decide whether the request explicitly requires internal knowledge.
+
+        This is intentionally conservative. It is better to leave RAG
+        disabled for an ordinary question than to inject unrelated
+        organizational context into the model.
+        """
+
+        if not isinstance(task, str):
+            return False
+
+        text = task.strip().lower()
+        if not text:
+            return False
+
+        explicit_phrases = (
+            "according to our",
+            "according to the company",
+            "according to the organization",
+            "according to vault",
+            "from our documents",
+            "from our document",
+            "from company documents",
+            "from the knowledge base",
+            "from our knowledge base",
+            "search the knowledge base",
+            "check the knowledge base",
+            "use the knowledge base",
+            "internal documentation",
+            "internal document",
+            "internal documents",
+            "company documentation",
+            "company document",
+            "company documents",
+            "organizational documentation",
+            "organization documents",
+            "our sop",
+            "the sop",
+            "maintenance sop",
+            "inspection sop",
+            "our manual",
+            "the maintenance manual",
+            "our records",
+            "internal records",
+            "our records",
+        )
+
+        if any(phrase in text for phrase in explicit_phrases):
+            return True
+
+        # Explicit knowledge-base wording is also accepted in compact form.
+        tokens = set(re.findall(r"\b[a-z0-9_-]+\b", text))
+        if {"kb", "knowledgebase"} & tokens:
+            return True
+
+        # Organization-specific engineering/document identifiers are useful
+        # signals when users omit the words "according to our documents".
+        # These patterns are deliberately narrow rather than treating every
+        # technical question as an internal-knowledge query.
+        internal_id_patterns = (
+            r"\bpump[a-z]*[-_]?\d{2,}\b",
+            r"\bvalve[a-z]*[-_]?\d{2,}\b",
+            r"\bcompressor[a-z]*[-_]?\d{2,}\b",
+            r"\bunit[-_]?\d{1,3}\b",
+            r"\bequipment[-_]?\d{1,4}\b",
+        )
+
+        if any(re.search(pattern, text) for pattern in internal_id_patterns):
+            internal_question_terms = (
+                "pressure", "temperature", "vibration", "flow",
+                "status", "inspection", "maintenance", "sop",
+                "specification", "spec", "rating", "limit",
+                "reading", "measurement", "operating", "operation",
+            )
+            if any(term in text for term in internal_question_terms):
+                return True
+
+        return False
+
+    def _requires_current_datetime(self, task: str) -> bool:
+        """Return True only for requests needing current date/time."""
+
+        if not isinstance(task, str):
+            return False
+
+        text = task.strip().lower()
+        phrases = (
+            "what time is it",
+            "current time",
+            "current date",
+            "today's date",
+            "todays date",
+            "what day is it",
+            "today",
+            "right now",
+            "date today",
+        )
+        return any(phrase in text for phrase in phrases)
 
     # ======================================================
     # BUILD MEMORY CONTEXT
@@ -724,6 +881,8 @@ class Orchestrator:
                 ↓
             Task Classification
                 ↓
+            Task-Aware Tool Routing
+                ↓
             Agent Selection
                 ↓
             Agent Execution
@@ -819,15 +978,19 @@ class Orchestrator:
         # CLASSIFY TASK
         # --------------------------------------------------
 
-        task_type = (
+        # --------------------------------------------------
+        # TASK ROUTING OVERRIDE FOR OBVIOUS CODING REQUESTS
+        # --------------------------------------------------
+        # The classifier remains the normal routing mechanism, but an
+        # explicit coding request must never fall through to the general
+        # agent. This is especially important for prompts such as
+        # "write a Python function..." where no company evidence is needed.
+        coding_override = self._looks_like_coding_task(task)
 
-            self.classifier.classify(
-
-                task
-
-            )
-
-        )
+        if coding_override:
+            task_type = "coding"
+        else:
+            task_type = self.classifier.classify(task)
 
         if task_type not in self.agents:
 
@@ -857,14 +1020,14 @@ class Orchestrator:
         # ASSIGN AGENT TOOLS
         # --------------------------------------------------
 
-        agent.tools = (
+        request_user_id = None
+        if isinstance(human_input, dict):
+            request_user_id = human_input.get("user_id")
 
-            self._get_agent_tools(
-
-                task_type
-
-            )
-
+        agent.tools = self._get_agent_tools(
+            task_type,
+            task=task,
+            user_id=request_user_id,
         )
 
         # --------------------------------------------------
