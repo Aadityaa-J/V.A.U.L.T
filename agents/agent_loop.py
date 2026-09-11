@@ -84,17 +84,13 @@ class AgentLoop:
         )
 
         # ======================================================
-        # KNOWLEDGE BASE: MANDATORY FIRST RETRIEVAL
+        # KNOWLEDGE BASE: ORCHESTRATOR-ENABLED RETRIEVAL
         # ======================================================
         #
-        # The Document Agent has access to the semantic
-        # knowledge-base tool. Do not rely solely on the LLM
-        # to decide whether to call it: seed the agent loop
-        # with an actual retrieval result before the model
-        # gets the opportunity to answer.
-        #
-        # This keeps retrieval as an orchestration decision
-        # rather than merely a prompt instruction.
+        # The Orchestrator decides whether RAG is appropriate for the
+        # request. When search_knowledge is present in this agent's tool
+        # set, retrieval is seeded before the LLM answers. When it is not
+        # present, ordinary tasks never touch the knowledge base.
         #
         if "search_knowledge" in self.tools:
             knowledge_result = self._execute_tool(
@@ -514,6 +510,10 @@ class AgentLoop:
             "result when answering.\n"
             "- Do not repeat an identical tool call.\n"
             "- Do not invent tool results.\n"
+            "- For coding requests, use run_python when it is available and validation would be useful; for example, validate an executable Python implementation before presenting it.\n"
+            "- Do not use run_python merely to answer a conceptual programming question.\n"
+            "- Treat search_knowledge results as the only source of internal organizational facts.\n"
+            "- If internal evidence is unavailable, say that it is not available rather than inventing it.\n"
             "- If no tool is necessary, answer directly."
         )
 

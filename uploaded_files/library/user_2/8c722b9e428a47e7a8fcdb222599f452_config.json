@@ -1,0 +1,18 @@
+{
+  "steam_config_path": "D:\\steam\\config\\stplug-in",
+  "depot_cache_path": "D:\\steam\\config\\depotcache",
+  "steam_exe_path": "D:\\steam\\steam.exe",
+  "steamtools_path": "C:\\Program Files\\SteamTools\\SteamTools.exe",
+  "theme": "dark",
+  "log_to_file": true,
+  "auto_updating_manifests": true,
+  "share_games_with_community": true,
+  "mirror_manifests_to_steam_depotcache": true,
+  "auth_key": "HFcDGCUfAmSLSBNj",
+  "game_card_size": 75,
+  "hook_mode": "steamtools",
+  "setup_completed": true,
+  "denuvo_terms_accepted": false,
+  "show_nsfw": false,
+  "cloud_redirect_enabled": false
+}

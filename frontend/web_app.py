@@ -98,6 +98,45 @@ CHAT_JOBS_LOCK = threading.Lock()
 # These requests do not need a model call. Handling them locally means
 # a slow/stuck document job cannot make a simple greeting wait in the
 # single-worker queue.
+def _is_coding_request(message):
+    """Identify clear coding requests so they are not forced through RAG.
+
+    General questioning is intentionally left alone. This only protects
+    explicit software-development requests such as "write a Python
+    function" from receiving the evidence-only prompt used for internal
+    knowledge/document tasks.
+    """
+
+    if not isinstance(message, str):
+        return False
+
+    text = message.strip().lower()
+    if not text:
+        return False
+
+    strong_phrases = (
+        "write a python", "write python", "python function",
+        "python code", "python script", "write code",
+        "generate code", "create code", "implement this",
+        "implement a ", "debug this code", "fix this code",
+        "review this code", "run this code", "execute this code",
+        "test this code", "coding task",
+    )
+    if any(phrase in text for phrase in strong_phrases):
+        return True
+
+    languages = (
+        "python", "javascript", "typescript", "java", "c++",
+        "c#", "golang", "rust", "kotlin", "swift", "sql",
+    )
+    code_terms = (
+        "function", "class", "method", "script", "program",
+        "code", "debug", "algorithm", "regex", "stack trace",
+        "syntax error",
+    )
+    return any(x in text for x in languages) and any(x in text for x in code_terms)
+
+
 FAST_GREETING_RESPONSES = {
     "hi": "Hello! How can I assist you today?",
     "hello": "Hello! How can I assist you today?",
@@ -391,6 +430,7 @@ def start_chat_job(message, attachment_paths=None, user_id=None):
         }
 
     normalized_message = message.strip().lower() if isinstance(message, str) else ""
+    coding_request = _is_coding_request(message)
 
     if not attachment_paths:
         fast_database_response = _fast_local_database_response(message, user_id=user_id)
@@ -446,6 +486,17 @@ def start_chat_job(message, attachment_paths=None, user_id=None):
             evidence = []
             requested_scope = _infer_knowledge_scope(message)
 
+            # Explicit coding requests should go straight to the CodingAgent.
+            # They do not need internal evidence unless the operator also
+            # attached a file, in which case that attachment remains valid
+            # request context.
+            if coding_request and not attachment_paths:
+                _set_job_activity(
+                    job_id,
+                    "TASK ROUTED",
+                    "Coding request detected; CodingAgent and coding tools enabled. Knowledge retrieval skipped.",
+                    "complete",
+                )
 
             if attachment_paths:
                 _set_job_activity(
@@ -537,25 +588,46 @@ def start_chat_job(message, attachment_paths=None, user_id=None):
                     )
                 )
 
-            _set_job_activity(
-                job_id,
-                "RETRIEVAL",
-                (
-                    "Using evidence exclusively from the attached file(s)."
-                    if attachment_paths
-                    else
+            if attachment_paths:
+                _set_job_activity(
+                    job_id,
+                    "RETRIEVAL",
+                    "Using evidence exclusively from the attached file(s).",
+                    "active",
+                )
+
+                backend_task += "\n\n" + _format_rag_evidence(
+                    evidence,
+                    attachment_only=True,
+                )
+
+                _set_job_activity(
+                    job_id,
+                    "RETRIEVAL",
+                    f"Prepared {len(evidence)} attachment evidence item(s) for the model.",
+                    "complete",
+                )
+            elif coding_request:
+                _set_job_activity(
+                    job_id,
+                    "RETRIEVAL",
+                    "Knowledge retrieval skipped because this is a normal coding request.",
+                    "complete",
+                )
+            else:
+                _set_job_activity(
+                    job_id,
+                    "RETRIEVAL",
                     (
                         "Searching only the Global Knowledge Base."
                         if requested_scope == "global"
                         else "Searching only the authenticated user's private Library."
                         if requested_scope == "user"
                         else "Searching authorized Global KB + the authenticated user's private Library."
-                    )
-                ),
-                "active",
-            )
+                    ),
+                    "active",
+                )
 
-            if not attachment_paths:
                 evidence = _retrieve_authorized_evidence(
                     user_id=user_id,
                     query=message,
@@ -563,17 +635,17 @@ def start_chat_job(message, attachment_paths=None, user_id=None):
                     scope=requested_scope,
                 )
 
-            backend_task += "\n\n" + _format_rag_evidence(
-                evidence,
-                attachment_only=bool(attachment_paths),
-            )
+                backend_task += "\n\n" + _format_rag_evidence(
+                    evidence,
+                    attachment_only=False,
+                )
 
-            _set_job_activity(
-                job_id,
-                "RETRIEVAL",
-                f"Prepared {len(evidence)} evidence item(s) for the model.",
-                "complete",
-            )
+                _set_job_activity(
+                    job_id,
+                    "RETRIEVAL",
+                    f"Prepared {len(evidence)} authorized evidence item(s) for the model.",
+                    "complete",
+                )
 
             _set_job_activity(
                 job_id,
@@ -582,7 +654,10 @@ def start_chat_job(message, attachment_paths=None, user_id=None):
                 "active",
             )
 
-            result = vault.run(backend_task)
+            result = vault.run(
+                backend_task,
+                human_input={"user_id": user_id},
+            )
             if result is None:
                 result = ""
             result = str(result)

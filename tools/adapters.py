@@ -438,6 +438,12 @@ class DocumentSummaryTool(BaseTool):
 class SearchKnowledgeTool(BaseTool):
     name = "search_knowledge"
 
+    def __init__(self, user_id=None):
+        # A tool instance is created per orchestrated request when user
+        # context is available. This prevents one user's private library
+        # from being exposed to another user through a shared tool object.
+        self.user_id = user_id
+
     description = (
         "Search the V.A.U.L.T. knowledge base using semantic retrieval. "
         "Use this tool for organization-specific, internal, or knowledge-base "
@@ -512,6 +518,18 @@ class SearchKnowledgeTool(BaseTool):
                 "'distance_threshold' must be greater than 0."
             )
 
+        # Prefer the request-scoped authenticated user when supplied.
+        # The search layer is responsible for combining global knowledge
+        # with only the private scope authorized for that user.
+        if self.user_id is not None:
+            return search_knowledge(
+                query=query,
+                top_k=top_k,
+                distance_threshold=distance_threshold,
+                user_id=self.user_id,
+            )
+
+        # Backward-compatible global search for standalone tool usage.
         return search_knowledge(
             query=query,
             top_k=top_k,
